@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# paper-verify outputs
+*_report.md
+*_claims.jsonl
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Internal handoff — not for publication
+CLAUDE-HANDOFF.md

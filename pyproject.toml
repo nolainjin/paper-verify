@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paper-verify"
+version = "0.1.0"
+description = "Citation fact-checking for documents — extract, fetch, judge, and score citations on a 100-point rubric."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Duchan Jin (진두찬)", email = "nolainjin@gmail.com" }]
+keywords = ["citation", "fact-check", "fact-checking", "research", "doi", "arxiv", "llm", "verification"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Text Processing :: Markup :: Markdown",
+]
+# Core has NO required third-party dependencies (stdlib only).
+dependencies = []
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40"]
+openai = ["openai>=1.40"]
+gemini = ["google-genai>=0.3"]
+mcp = ["mcp>=1.2"]
+all = ["anthropic>=0.40", "openai>=1.40", "google-genai>=0.3", "mcp>=1.2"]
+dev = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/nolainjin/paper-verify"
+Repository = "https://github.com/nolainjin/paper-verify"
+
+[project.scripts]
+paper-verify = "paperverify.cli:main"
+paper-verify-mcp = "paperverify.mcp_server:main"
+
+[tool.setuptools]
+packages = ["paperverify", "paperverify.harness"]
