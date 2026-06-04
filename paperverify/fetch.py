@@ -13,6 +13,8 @@ Levels:
 
 from __future__ import annotations
 
+import ipaddress
+import socket
 import threading
 import time
 import urllib.error
@@ -211,8 +213,45 @@ def _strip_html(body: str) -> tuple[str, str, str]:
     return parser.title.strip(), parser.meta_desc, parser.text()
 
 
+_ALLOWED_SCHEMES = {"http", "https"}
+
+
+def _guard_url(url: str) -> None:
+    """Reject SSRF-prone targets before any request is issued.
+
+    Blocks non-http(s) schemes (file://, ftp://, gopher://, ...) and hosts that
+    resolve to private / loopback / link-local / reserved addresses (e.g. cloud
+    metadata at 169.254.169.254, 127.0.0.1, 10.0.0.0/8). Critical when paper-
+    verify runs as an MCP server / shared service with untrusted document input.
+    Raises ValueError on a blocked target. (TOCTOU between resolve and connect
+    is not closed here; a re-checking opener would be the rigorous version.)
+    """
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme.lower() not in _ALLOWED_SCHEMES:
+        raise ValueError(f"blocked URL scheme: {parts.scheme!r}")
+    host = parts.hostname or ""
+    if not host:
+        raise ValueError("blocked URL: missing host")
+    try:
+        infos = socket.getaddrinfo(host, parts.port or 80, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as exc:
+        raise ValueError(f"unresolvable host: {host}") from exc
+    for *_rest, sockaddr in infos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            raise ValueError(f"blocked internal address: {ip} (host {host!r})")
+
+
 def _open(url: str, method: str) -> tuple[int, str, str, bytes]:
     """Open ``url`` following redirects. Returns (status, final_url, ctype, body)."""
+    _guard_url(url)
     req = urllib.request.Request(
         url, method=method, headers={"User-Agent": USER_AGENT, "Accept": "*/*"}
     )
