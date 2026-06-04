@@ -64,11 +64,43 @@ def build_prompt(claim_context: str, source_text: str) -> str:
 
 
 def parse_response(text: str) -> tuple[Verdict, str]:
-    """Parse an LLM reply into (verdict, reason). Robust to loose formatting."""
+    """Parse an LLM reply into (verdict, reason). Robust to loose formatting.
+
+    An explicit ``VERDICT: <word>`` line takes precedence over any verdict word
+    appearing earlier in free-form prose, so that reasoning written before the
+    structured line cannot flip the verdict (e.g. "This is a partial match at
+    best.\\nVERDICT: Mismatch"). Only when no explicit VERDICT line is present
+    do we fall back to the first verdict word found anywhere.
+    """
+    lines = text.splitlines()
+
+    def _trailing_reason(start: int) -> str:
+        for line in lines[start:]:
+            s = line.strip()
+            if s.lower().startswith("reason"):
+                return re.sub(r"^reason[:\s-]*", "", s, flags=re.I).strip()
+        return ""
+
+    # Pass 1: an explicit "VERDICT: <word>" line wins, wherever it appears.
+    for i, line in enumerate(lines):
+        m = re.match(
+            r"[:\s\-*#>]*verdict[:\s-]+(match|partial|mismatch|uncertain|inaccessible)\b",
+            line.strip(),
+            flags=re.I,
+        )
+        if m:
+            verdict = _VERDICT_WORDS[m.group(1).lower()]
+            rest = re.sub(
+                r"^[:\s\-*#>]*verdict[:\s-]+\w+[:\s-]*", "", line.strip(), flags=re.I
+            ).strip()
+            reason = rest or _trailing_reason(i + 1)
+            return verdict, reason[:300]
+
+    # Pass 2 (fallback): first verdict word anywhere in the reply.
     verdict = Verdict.PARTIAL
     reason = ""
     found = False
-    for line in text.splitlines():
+    for line in lines:
         stripped = line.strip()
         low = stripped.lower()
         if not found:

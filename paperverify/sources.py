@@ -176,6 +176,12 @@ def fetch_arxiv_metadata(arxiv_id: str) -> Optional[dict]:
     if entry is None:
         return None
 
+    # arXiv returns HTTP 200 with an error <entry> for unknown/malformed ids
+    # (id -> arxiv.org/api/errors, title "Error"). Do not treat as a real paper.
+    id_el = entry.find("atom:id", _ARXIV_NS)
+    if id_el is not None and id_el.text and "arxiv.org/api/errors" in id_el.text:
+        return None
+
     title_el = entry.find("atom:title", _ARXIV_NS)
     title = (title_el.text or "").strip() if title_el is not None else ""
 
