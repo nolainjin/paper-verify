@@ -150,10 +150,20 @@ class ScoredCitation:
     judgements: list = field(default_factory=list)  # list[Judgement]
     score: float = 0.0
     breakdown: dict = field(default_factory=dict)   # rubric item -> points
+    # The verdict actually used for the claim-match score (set by score_citation).
+    # Differs from judgements[0] when judges split (-> Uncertain) or a tie-break
+    # resolves disagreement; the display must reflect this, not the first judge.
+    effective_verdict: Optional[Verdict] = None
 
     @property
     def consensus(self) -> Optional[Verdict]:
-        """Primary judge's verdict (first in the list)."""
+        """The verdict used for scoring (effective consensus).
+
+        Falls back to the first judge's verdict only when no effective verdict
+        was recorded (e.g. a ScoredCitation built outside score_citation).
+        """
+        if self.effective_verdict is not None:
+            return self.effective_verdict
         if not self.judgements:
             return None
         return self.judgements[0].verdict

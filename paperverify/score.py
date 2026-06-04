@@ -166,4 +166,5 @@ def score_citation(
         judgements=list(judgements),
         score=score,
         breakdown=breakdown,
+        effective_verdict=consensus,
     )
