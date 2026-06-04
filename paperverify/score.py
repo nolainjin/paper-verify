@@ -34,6 +34,26 @@ _VERDICT_RANK = {
 
 _YEAR_RE = re.compile(r"\b(1[89]\d{2}|20\d{2})\b")
 _AUTHOR_RE = re.compile(r"\b([A-Z][a-z]{2,})\b")
+_WORD_RE = re.compile(r"[a-z]+")
+
+# Capitalized tokens that look like author surnames but are not, in citation
+# context: month names and very common sentence-initial / function words. Kept
+# conservative to avoid excluding real surnames (audit CL-3).
+_AUTHOR_STOPWORDS = {
+    "january", "february", "march", "april", "may", "june", "july", "august",
+    "september", "october", "november", "december",
+    "the", "this", "that", "these", "those", "from", "and", "but", "for", "with",
+    "when", "while", "their", "there", "here", "what", "which", "who", "how", "why",
+    "our", "his", "her", "its", "however", "although", "because", "during",
+    "between", "among", "also", "thus", "hence", "moreover", "furthermore",
+    "study", "studies", "table", "figure", "section", "chapter", "data",
+    "results", "result", "method", "methods", "see", "note", "abstract",
+}
+
+
+def _candidate_authors(ctx: str) -> list[str]:
+    """Capitalized context tokens that plausibly name an author (CL-3)."""
+    return [a for a in _AUTHOR_RE.findall(ctx) if a.lower() not in _AUTHOR_STOPWORDS]
 
 
 def _author_year_credit(citation: Citation, fetched: Fetched | None) -> tuple[int, str]:
@@ -50,7 +70,7 @@ def _author_year_credit(citation: Citation, fetched: Fetched | None) -> tuple[in
 
     ctx = citation.context
     ctx_years = set(_YEAR_RE.findall(ctx))
-    ctx_authors = [a for a in _AUTHOR_RE.findall(ctx)]
+    ctx_authors = _candidate_authors(ctx)
 
     # Structured metadata path (Crossref / arXiv / NCBI) — authoritative.
     has_structured = bool(fetched.authors) or fetched.year is not None
@@ -60,10 +80,9 @@ def _author_year_credit(citation: Citation, fetched: Fetched | None) -> tuple[in
             and bool(ctx_years)
             and str(fetched.year) in ctx_years
         )
-        meta_authors = " ".join(fetched.authors).lower()
-        author_ok = bool(ctx_authors) and any(
-            a.lower() in meta_authors for a in ctx_authors
-        )
+        # Token-exact author match (no substring: "Lee" must not match "Leestma").
+        meta_tokens = set(_WORD_RE.findall(" ".join(fetched.authors).lower()))
+        author_ok = any(a.lower() in meta_tokens for a in ctx_authors)
         if year_ok and author_ok:
             return 20, "author+year match (metadata)"
         if year_ok or author_ok:
@@ -76,8 +95,9 @@ def _author_year_credit(citation: Citation, fetched: Fetched | None) -> tuple[in
         # No metadata at all to compare — do not punish; neutral partial credit.
         return 10, "metadata unavailable — author/year not scored"
 
+    source_tokens = set(_WORD_RE.findall(source))
     year_ok = any(y in source for y in ctx_years) if ctx_years else False
-    author_ok = any(a.lower() in source for a in ctx_authors) if ctx_authors else False
+    author_ok = any(a.lower() in source_tokens for a in ctx_authors)
     if year_ok and author_ok:
         return 20, "author+year match (text)"
     if year_ok or author_ok:
