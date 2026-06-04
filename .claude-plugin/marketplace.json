@@ -1,0 +1,15 @@
+{
+  "name": "paper-verify",
+  "owner": {
+    "name": "Duchan Jin",
+    "email": "nolainjin@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "paper-verify",
+      "source": "./integrations/plugins/paper-verify",
+      "description": "Citation verification and source triage for Markdown/text documents — narrow a long bibliography to the sources a human should actually review.",
+      "homepage": "https://github.com/nolainjin/paper-verify"
+    }
+  ]
+}

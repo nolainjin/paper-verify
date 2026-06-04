@@ -1,0 +1,15 @@
+{
+  "name": "paper-verify",
+  "displayName": "Paper Verify",
+  "version": "0.1.0",
+  "description": "Citation verification and source triage for Markdown/text documents. Reduces a long bibliography or source list to the citations a human should actually review.",
+  "author": {
+    "name": "Duchan Jin",
+    "email": "nolainjin@gmail.com"
+  },
+  "homepage": "https://github.com/nolainjin/paper-verify",
+  "repository": "https://github.com/nolainjin/paper-verify",
+  "license": "MIT",
+  "keywords": ["citation", "fact-check", "source-triage", "research", "mcp"],
+  "mcpServers": "./.mcp.json"
+}
