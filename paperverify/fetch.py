@@ -287,9 +287,15 @@ def fetch(citation: Citation, level: str = "L2") -> Fetched:
         # (403 / 404) — that is the whole point of the paywall bypass. We still
         # record the landing URL when a cheap status check resolves one.
         final = url
+        landing_status: int | None = None
         try:
-            _status, final, _ctype, _body = _open(url, "GET")
-        except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError):
+            landing_status, final, _ctype, _body = _open(url, "GET")
+        except urllib.error.HTTPError as exc:
+            # Dead/paywalled landing — keep the real code as an observable signal
+            # rather than discarding it (No Silent Fallback).
+            landing_status = exc.code
+            final = url
+        except (urllib.error.URLError, OSError, ValueError):
             final = url
         f = Fetched(
             id=citation.id,
@@ -300,6 +306,7 @@ def fetch(citation: Citation, level: str = "L2") -> Fetched:
             authors=list(meta.get("authors") or []),
             year=meta.get("year"),
             source=meta_source,
+            landing_status=landing_status,
         )
         return f
 

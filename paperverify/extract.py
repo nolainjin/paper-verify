@@ -60,9 +60,17 @@ def extract(text: str) -> list[Citation]:
     seen: set[tuple[str, str]] = set()
     out: list[Citation] = []
     cid = 0
+    url_spans: list[tuple[int, int]] = []  # spans claimed by URL matches
 
     for type_name, pat in PATTERNS:
         for m in pat.finditer(text):
+            if type_name == "URL":
+                url_spans.append((m.start(), m.end()))
+            # A DOI/PMC/PMID/arXiv sitting inside an already-matched URL is the
+            # same physical source (fetch._metadata_for routes URL-borne ids),
+            # so don't count it as a second citation (CL-1).
+            elif any(s <= m.start() and m.end() <= e for s, e in url_spans):
+                continue
             ref = m.group(0).rstrip(".,;:!?)")
             key = (type_name, ref.lower())
             if key in seen:

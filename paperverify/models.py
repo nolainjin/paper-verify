@@ -102,6 +102,7 @@ class Fetched:
     year: Optional[int] = None  # publication year (metadata APIs), else None
     source: str = ""           # which path produced the data: crossref|arxiv|ncbi|http|archive|none
     soft_404_suspect: bool = False  # 2xx body looks like an error/placeholder page
+    landing_status: Optional[int] = None  # real HTTP status of the landing URL on a metadata hit (None = not probed)
 
     @property
     def ok(self) -> bool:
@@ -124,6 +125,7 @@ class Fetched:
             year=(int(d["year"]) if d.get("year") is not None else None),
             source=d.get("source", ""),
             soft_404_suspect=bool(d.get("soft_404_suspect", False)),
+            landing_status=(int(d["landing_status"]) if d.get("landing_status") is not None else None),
         )
 
 
