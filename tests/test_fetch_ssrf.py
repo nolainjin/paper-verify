@@ -5,6 +5,7 @@ author is not the operator.
 """
 
 import pytest
+import urllib.error
 
 import paperverify.fetch as fetch_mod
 
@@ -27,3 +28,37 @@ def test_open_blocks_cloud_metadata_address():
 def test_open_blocks_loopback_address():
     with pytest.raises(ValueError):
         fetch_mod._open("http://127.0.0.1:8080/admin", "GET")
+
+
+def test_open_blocks_redirect_to_loopback(monkeypatch):
+    class RedirectingOpener:
+        def open(self, req, timeout):
+            raise urllib.error.HTTPError(
+                req.full_url,
+                302,
+                "Found",
+                {"Location": "http://127.0.0.1:8080/admin"},
+                None,
+            )
+
+    monkeypatch.setattr(fetch_mod.urllib.request, "build_opener", lambda *handlers: RedirectingOpener())
+
+    with pytest.raises(ValueError, match="blocked internal address"):
+        fetch_mod._open("https://example.com/redirect", "GET")
+
+
+def test_open_blocks_redirect_to_file_scheme(monkeypatch):
+    class RedirectingOpener:
+        def open(self, req, timeout):
+            raise urllib.error.HTTPError(
+                req.full_url,
+                302,
+                "Found",
+                {"Location": "file:///etc/passwd"},
+                None,
+            )
+
+    monkeypatch.setattr(fetch_mod.urllib.request, "build_opener", lambda *handlers: RedirectingOpener())
+
+    with pytest.raises(ValueError, match="blocked URL scheme"):
+        fetch_mod._open("https://example.com/redirect", "GET")

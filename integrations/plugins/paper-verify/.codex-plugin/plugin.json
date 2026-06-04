@@ -1,0 +1,26 @@
+{
+  "name": "paper-verify",
+  "version": "0.1.0",
+  "description": "Citation verification and source triage for Markdown/text documents.",
+  "author": {
+    "name": "Duchan Jin",
+    "email": "nolainjin@gmail.com"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Paper Verify",
+    "shortDescription": "Verify citations and shortlist risky sources.",
+    "longDescription": "Paper Verify adds a citation verification workflow for research papers, reports, lecture notes, and blog posts. It can call the paper-verify CLI/MCP surface, parse structured JSON, and reduce a long source list to the citations that need human review.",
+    "developerName": "Duchan Jin",
+    "category": "Productivity",
+    "capabilities": [
+      "Citation verification",
+      "Source triage",
+      "Blog source checking",
+      "MCP tool access"
+    ],
+    "defaultPrompt": "Verify this document's citations and produce a shortlist of sources that need human review."
+  },
+  "mcpServers": "./.mcp.json"
+}
+

@@ -183,10 +183,13 @@ class ScoredCitation:
         return Tier.from_score(self.score)
 
     def to_dict(self) -> dict:
+        consensus = self.consensus
         return {
             "citation": self.citation.to_dict(),
             "fetched": self.fetched.to_dict() if self.fetched else None,
             "judgements": [j.to_dict() for j in self.judgements],
+            "consensus": consensus.value if consensus else None,
+            "effective_verdict": consensus.value if consensus else None,
             "score": self.score,
             "breakdown": self.breakdown,
             "tier": self.tier.value,

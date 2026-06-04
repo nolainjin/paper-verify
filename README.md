@@ -11,6 +11,13 @@ citations.
 > trust their own footnotes — and to catch AI-hallucinated citations before
 > they ship.
 
+It is also a **review triage tool**: use it to reduce a long bibliography or
+blog source list into the small set a human should actually inspect. The JSON
+surface exposes `tier`, `consensus`, `effective_verdict`, judge disagreement,
+`source`, `landing_status`, and `soft_404_suspect`, so agents can build a
+shortlist such as **Must Review**, **Review If Important**, and **Probably
+Safe** instead of asking a human to read every cited source.
+
 ## No framework dependency
 
 The core has **zero required third-party dependencies** (Python stdlib only) and
@@ -36,6 +43,23 @@ run end-to-end with **no API keys at all**.
 4. **Score** — apply the 100-point rubric and assign a tier.
 5. **Report** — emit `<basename>_report.md` (+ `<basename>_claims.jsonl` for
    reuse). Any tier-F citation raises a document-level warning banner.
+
+## Best fit
+
+paper-verify works best as the first pass before human review:
+
+- **Research papers / reports** — find the citations most likely to need manual
+  paper reading (`F`, `C`, `Uncertain`, judge disagreement, weak author/year
+  match, dead landing pages).
+- **Blog posts / newsletters** — catch dead links, soft-404s, claim/source
+  mismatch, and source drift before publishing.
+- **Lecture notes / public handouts** — separate probably-safe citations from
+  sources that need a human spot-check.
+- **Agent workflows** — let Claude Code, Codex, Cursor, or Gemini parse JSON and
+  loop only over the risky citations.
+
+It is not a replacement for final expert review. It is designed to make that
+review smaller, faster, and better targeted.
 
 ## Install
 
@@ -235,13 +259,24 @@ The JSON top-level keys are: `schema_version`, `source_file`, `level`,
 `profile` (active harness profile key, or `null`), `judges`, `overall_score`,
 `overall_tier`, `has_failure`, `tier_distribution` (counts per tier), and
 `citations` (one object per citation: `citation`, `fetched`, `judgements`,
-`score`, `breakdown`, `tier`).
+`consensus`, `effective_verdict`, `score`, `breakdown`, `tier`).
 
-Each `citation.fetched` object carries (schema_version `"3"`): `status`,
+Each `citation.fetched` object carries (schema_version `"4"`): `status`,
 `title`, `abstract`, `url_final`, `via_archive`, `error`, plus `authors` (list,
 from metadata APIs), `year` (int or `null`), `source` (`crossref` | `arxiv` |
 `ncbi` | `http` | `archive` | `none` — which path produced the data), and
 `soft_404_suspect` (bool — a 2xx page that looks like an error/placeholder).
+
+For triage automation, prioritize citations where any of these are true:
+
+- `tier` is `F` or `C`.
+- `consensus` / `effective_verdict` is `Uncertain`, `Mismatch`, or
+  `Inaccessible`.
+- judges disagree in `judgements`.
+- `fetched.soft_404_suspect` is `true`.
+- `fetched.landing_status` is `403`, `404`, or another non-2xx status while
+  metadata still resolved the source.
+- `fetched.source` is `archive` or `none`.
 
 `--json` is **additive**: pass `--out DIR` to also write the `.md` / `.jsonl`
 files. **Exit codes are stable for agents**: `0` = ran successfully *regardless

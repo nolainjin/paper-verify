@@ -55,10 +55,37 @@ def test_render_json_citation_item_shape():
     out = render_json(_report())
     assert len(out["citations"]) == 1
     item = out["citations"][0]
-    # Each item is exactly ScoredCitation.to_dict().
-    assert set(item.keys()) == {"citation", "fetched", "judgements", "score", "breakdown", "tier"}
+    assert set(item.keys()) == {
+        "citation",
+        "fetched",
+        "judgements",
+        "consensus",
+        "effective_verdict",
+        "score",
+        "breakdown",
+        "tier",
+    }
     assert item["citation"]["ref"] == "https://x.com"
+    assert item["consensus"] == "Match"
+    assert item["effective_verdict"] == "Match"
     assert item["tier"] in {"A", "B", "C", "F"}
+
+
+def test_render_json_exposes_effective_uncertain_verdict():
+    c = Citation(id=1, type="URL", ref="https://x.com", context="Smith 2017.", line=1)
+    f = Fetched(id=1, status=200, title="Smith 2017", abstract="Smith reported it.")
+    sc = score_citation(
+        c,
+        f,
+        [
+            Judgement("a", Verdict.MATCH, "supported"),
+            Judgement("b", Verdict.MISMATCH, "not found"),
+        ],
+    )
+    item = render_json(Report(source_file="doc.md", level="L2", scored=[sc]))["citations"][0]
+    assert item["consensus"] == "Uncertain"
+    assert item["effective_verdict"] == "Uncertain"
+    assert item["breakdown"]["claim_match"] == 15
 
 
 def test_render_json_is_serializable():

@@ -35,6 +35,7 @@ USER_AGENT = (
 TIMEOUT = 10  # seconds
 MAX_BODY = 50 * 1024  # ~50KB of stripped text kept
 MIN_HOST_INTERVAL = 1.0  # seconds between calls to the same host
+MAX_REDIRECTS = 5
 
 # Per-host rate limiting shared across worker threads.
 _host_lock = threading.Lock()
@@ -216,6 +217,11 @@ def _strip_html(body: str) -> tuple[str, str, str]:
 _ALLOWED_SCHEMES = {"http", "https"}
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def _guard_url(url: str) -> None:
     """Reject SSRF-prone targets before any request is issued.
 
@@ -251,16 +257,30 @@ def _guard_url(url: str) -> None:
 
 def _open(url: str, method: str) -> tuple[int, str, str, bytes]:
     """Open ``url`` following redirects. Returns (status, final_url, ctype, body)."""
-    _guard_url(url)
-    req = urllib.request.Request(
-        url, method=method, headers={"User-Agent": USER_AGENT, "Accept": "*/*"}
-    )
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-        status = resp.status
-        final = resp.geturl()
-        ctype = resp.headers.get("Content-Type", "")
-        body = resp.read(MAX_BODY * 4) if method == "GET" else b""
-    return status, final, ctype, body
+    current = url
+    opener = urllib.request.build_opener(_NoRedirect)
+    for _ in range(MAX_REDIRECTS + 1):
+        _guard_url(current)
+        req = urllib.request.Request(
+            current, method=method, headers={"User-Agent": USER_AGENT, "Accept": "*/*"}
+        )
+        try:
+            with opener.open(req, timeout=TIMEOUT) as resp:
+                status = resp.status
+                final = resp.geturl()
+                ctype = resp.headers.get("Content-Type", "")
+                body = resp.read(MAX_BODY * 4) if method == "GET" else b""
+                return status, final, ctype, body
+        except urllib.error.HTTPError as exc:
+            if exc.code not in {301, 302, 303, 307, 308}:
+                raise
+            location = exc.headers.get("Location")
+            if not location:
+                raise
+            current = urllib.parse.urljoin(current, location)
+            if exc.code == 303:
+                method = "GET"
+    raise ValueError(f"too many redirects: {url}")
 
 
 def _fetch_one(url: str, level: str) -> Fetched:

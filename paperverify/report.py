@@ -14,7 +14,9 @@ from .models import Report, ScoredCitation, Tier, Verdict
 #   "2" -> "3": added per-citation Fetched fields "authors" (list), "year"
 #   (int|null), "source" (str: crossref|arxiv|ncbi|http|archive|none), and
 #   "soft_404_suspect" (bool); added the "Uncertain" verdict. Additive.
-SCHEMA_VERSION = "3"
+#   "3" -> "4": added per-citation consensus/effective_verdict fields so JSON
+#   consumers can read the verdict used for scoring directly.
+SCHEMA_VERSION = "4"
 
 _TIER_ORDER = [Tier.F, Tier.C, Tier.B, Tier.A]
 _TIER_LABEL = {

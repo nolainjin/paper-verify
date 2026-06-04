@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "paper-verify": {
+      "command": "paper-verify-mcp",
+      "args": []
+    }
+  }
+}
+
