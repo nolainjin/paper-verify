@@ -45,6 +45,14 @@ from xml.etree import ElementTree as ET
 CONTACT_EMAIL = "paper-verify@users.noreply.github.com"
 API_USER_AGENT = f"paper-verify/0.1 (https://github.com/nolainjin/paper-verify; mailto:{CONTACT_EMAIL})"
 API_TIMEOUT = 8  # seconds — short, so a slow API does not stall the whole run
+# Upper bound on bytes read from any metadata API response. These endpoints
+# return small JSON / Atom records (a few KB); a 2 MB cap is generous and stops
+# a hostile or misbehaving endpoint from streaming an unbounded body into memory
+# (audit P1-8 / SEC-04, DoS). XML parsing below stays on stdlib ElementTree; the
+# input is now size-bounded and comes only from the fixed official-API hosts, so
+# the classic entity-expansion / billion-laughs vector is mitigated by the cap
+# (a defusedxml dependency was considered but rejected to keep the core stdlib-only).
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _RETRY_STATUSES = {429, 500, 502, 503, 504}
 _ARXIV_NS = {"atom": "http://www.w3.org/2005/Atom"}
 
@@ -80,7 +88,10 @@ def _get(url: str, *, accept: str = "*/*") -> bytes:
     for attempt in range(2):  # 1 initial try + 1 retry
         try:
             with urllib.request.urlopen(req, timeout=API_TIMEOUT) as resp:
-                return resp.read()
+                # Cap the read so a hostile / runaway endpoint cannot exhaust
+                # memory (P1-8 / SEC-04). Read one byte past the cap to detect
+                # (and drop) over-long bodies deterministically.
+                return resp.read(MAX_RESPONSE_BYTES + 1)[:MAX_RESPONSE_BYTES]
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 raise _NotFound(url) from exc

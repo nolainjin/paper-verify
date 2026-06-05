@@ -103,3 +103,50 @@ def test_keyword_match_kept_when_claim_has_no_year_or_number():
     source = "Smith reported a substantial cognitive gain among adults in the study."
     j = judge.evaluate(claim, source)
     assert j.verdict is Verdict.MATCH
+
+
+# ---------------------------------------------------------------------------
+# P1-8 — sources._get caps the response read (SEC-04, DoS / memory)
+# ---------------------------------------------------------------------------
+
+import pytest  # noqa: E402
+
+
+class _FakeResp:
+    """Minimal context-manager response whose read() honours an amt argument."""
+
+    def __init__(self, payload: bytes):
+        self._payload = payload
+        self.read_calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self, amt=None):
+        self.read_calls.append(amt)
+        return self._payload if amt is None else self._payload[:amt]
+
+
+def test_get_caps_read_to_max_bytes(monkeypatch):
+    big = b"a" * (sources.MAX_RESPONSE_BYTES + 50_000)
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        resp = _FakeResp(big)
+        captured["resp"] = resp
+        return resp
+
+    monkeypatch.setattr(sources.urllib.request, "urlopen", fake_urlopen)
+
+    out = sources._get("https://api.crossref.org/works/10.0/x")
+    # Body is truncated to the cap, and read() was called with an explicit amt.
+    assert len(out) <= sources.MAX_RESPONSE_BYTES
+    assert captured["resp"].read_calls and captured["resp"].read_calls[0] is not None
+
+
+def test_get_max_bytes_is_bounded():
+    # The cap must be a sane, finite size (2 MB by spec, room to flex).
+    assert 0 < sources.MAX_RESPONSE_BYTES <= 8 * 1024 * 1024
