@@ -259,7 +259,7 @@ def test_disagree_with_tiebreak_gets_consensus_and_cross_check():
         tiebreak_judgement=_j("t", Verdict.PARTIAL),
     )
     assert sc.breakdown["cross_check"] == 10
-    # most-conservative across {Match, Partial, Partial} == Partial == 25
+    # majority across {Match, Partial, Partial} == Partial == 25
     assert sc.breakdown["claim_match"] == 25
 
 

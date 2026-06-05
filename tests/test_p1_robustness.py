@@ -270,3 +270,63 @@ def test_fetch_skips_archive_when_no_snapshot(monkeypatch):
     )
     assert f.source == "none"
     assert "archive: not captured" in f.error
+
+
+# ---------------------------------------------------------------------------
+# P1-4 — tiebreak consensus is a majority/arbiter, not min() (CL-5 / JS-02);
+#        INACCESSIBLE is an availability signal, separated from the claim axis.
+# ---------------------------------------------------------------------------
+
+from paperverify.models import Citation, Fetched, Judgement  # noqa: E402
+from paperverify.score import score_citation  # noqa: E402
+
+
+def _p4_cite():
+    return Citation(id=1, type="URL", ref="https://x.com", context="Smith 2017.", line=1)
+
+
+def _p4_fetched():
+    return Fetched(id=1, status=200, title="Smith 2017", abstract="In 2017 Smith reported.")
+
+
+def _jv(name, verdict):
+    return Judgement(name, verdict, "r")
+
+
+def test_tiebreak_majority_not_dragged_by_single_dissent():
+    # 3 of 4 say Match; the old min() picked the lone Mismatch (0 pts).
+    sc = score_citation(
+        _p4_cite(),
+        _p4_fetched(),
+        [_jv("a", Verdict.MATCH), _jv("b", Verdict.MATCH), _jv("c", Verdict.MISMATCH)],
+        tiebreak_judgement=_jv("t", Verdict.MATCH),
+    )
+    assert sc.effective_verdict is Verdict.MATCH
+    assert sc.breakdown["claim_match"] == 50
+    assert sc.breakdown["cross_check"] == 10
+
+
+def test_tiebreak_inaccessible_excluded_from_claim_consensus():
+    # One judge could not access the source; that must not become the claim
+    # verdict when the others (+ tiebreak) substantively agree on Match.
+    sc = score_citation(
+        _p4_cite(),
+        _p4_fetched(),
+        [_jv("a", Verdict.MATCH), _jv("b", Verdict.INACCESSIBLE)],
+        tiebreak_judgement=_jv("t", Verdict.MATCH),
+    )
+    assert sc.effective_verdict is Verdict.MATCH
+    assert sc.breakdown["claim_match"] == 50
+
+
+def test_tiebreak_arbiter_breaks_a_true_tie():
+    # 1 Match vs 1 Mismatch, tiebreak Mismatch -> arbiter decides Mismatch.
+    sc = score_citation(
+        _p4_cite(),
+        _p4_fetched(),
+        [_jv("a", Verdict.MATCH), _jv("b", Verdict.MISMATCH)],
+        tiebreak_judgement=_jv("t", Verdict.MISMATCH),
+    )
+    assert sc.effective_verdict is Verdict.MISMATCH
+    assert sc.breakdown["claim_match"] == 0
+    assert sc.breakdown["cross_check"] == 10
