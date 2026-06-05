@@ -155,6 +155,17 @@ def _tokens(text: str) -> set[str]:
     return {t.lower() for t in _TOKEN_RE.findall(text) if len(t) > 2 and t.lower() not in _STOP}
 
 
+# Numeric tokens carry the quantitative substance of most citations (a year, a
+# percentage, an N). The token-overlap heuristic ignores them, so a claim can
+# reach high word overlap while its key figure is absent from the source.
+_NUM_RE = re.compile(r"\d+(?:[.,]\d+)?")
+
+
+def _numeric_tokens(text: str) -> set[str]:
+    """Years and numbers in ``text``, normalized (commas stripped, ``.0`` kept)."""
+    return {m.group(0).replace(",", "") for m in _NUM_RE.finditer(text)}
+
+
 class KeywordJudge:
     """Token-overlap heuristic. No dependencies, clearly low-confidence."""
 
@@ -174,7 +185,23 @@ class KeywordJudge:
             v = Verdict.PARTIAL
         else:
             v = Verdict.MISMATCH
-        return Judgement(self.name, v, f"token overlap {overlap:.0%} (heuristic, low confidence)")
+        reason = f"token overlap {overlap:.0%} (heuristic, low confidence)"
+
+        # P1-5: a keyword Match must not assert quantitative agreement it cannot
+        # check. If the claim carries year/number tokens that the source does not
+        # contain, the cited figure is unverified — clamp Match down to Partial
+        # rather than awarding a full 50-pt claim_match on word overlap alone.
+        if v is Verdict.MATCH:
+            claim_nums = _numeric_tokens(claim_context)
+            if claim_nums and not (claim_nums <= _numeric_tokens(source_text)):
+                missing = sorted(claim_nums - _numeric_tokens(source_text))
+                v = Verdict.PARTIAL
+                reason = (
+                    f"token overlap {overlap:.0%} but claim figure(s) "
+                    f"{', '.join(missing)} absent from source (heuristic clamp)"
+                )
+
+        return Judgement(self.name, v, reason)
 
 
 # ---------------------------------------------------------------------------

@@ -57,3 +57,49 @@ def test_soft_404_still_flags_specific_not_found_phrase():
 def test_soft_404_still_flags_korean_not_found_phrase():
     assert _detect_soft_404("홈", "요청하신 페이지를 찾을 수 없습니다. " + "x" * 400,
                             "http://a/deep", "http://a/deep")
+
+
+# ---------------------------------------------------------------------------
+# P1-5 — keyword judge: clamp Match when a claim's year/number is absent
+#        from the source (JS-03 / CL-9). KeywordJudge is dependency-free and
+#        only does token overlap, so it cannot verify quantitative agreement;
+#        a Match on a claim whose specific year/figure is missing is unsafe.
+# ---------------------------------------------------------------------------
+
+from paperverify.judge import KeywordJudge  # noqa: E402
+from paperverify.models import Verdict  # noqa: E402
+
+
+def test_keyword_match_clamped_to_partial_when_claim_year_absent():
+    judge = KeywordJudge()
+    # High word overlap, but the claim's year (2017) is not in the source.
+    claim = "Smith reported a substantial cognitive gain in adults in 2017."
+    source = "Smith reported a substantial cognitive gain in adults."
+    j = judge.evaluate(claim, source)
+    assert j.verdict is not Verdict.MATCH
+    assert j.verdict is Verdict.PARTIAL
+
+
+def test_keyword_match_clamped_to_partial_when_claim_number_absent():
+    judge = KeywordJudge()
+    # The cited figure (37 percent) is the whole point and is missing.
+    claim = "The intervention improved retention by 37 percent across the cohort."
+    source = "The intervention improved retention across the cohort overall."
+    j = judge.evaluate(claim, source)
+    assert j.verdict is Verdict.PARTIAL
+
+
+def test_keyword_match_kept_when_year_and_number_present():
+    judge = KeywordJudge()
+    claim = "Smith reported a 37 percent gain in 2017 among adults."
+    source = "In 2017 Smith reported a 37 percent gain among adults in the study."
+    j = judge.evaluate(claim, source)
+    assert j.verdict is Verdict.MATCH
+
+
+def test_keyword_match_kept_when_claim_has_no_year_or_number():
+    judge = KeywordJudge()
+    claim = "Smith reported a substantial cognitive gain among adults."
+    source = "Smith reported a substantial cognitive gain among adults in the study."
+    j = judge.evaluate(claim, source)
+    assert j.verdict is Verdict.MATCH
