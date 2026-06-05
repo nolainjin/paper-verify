@@ -150,3 +150,62 @@ def test_get_caps_read_to_max_bytes(monkeypatch):
 def test_get_max_bytes_is_bounded():
     # The cap must be a sane, finite size (2 MB by spec, room to flex).
     assert 0 < sources.MAX_RESPONSE_BYTES <= 8 * 1024 * 1024
+
+
+# ---------------------------------------------------------------------------
+# P1-1 — main HTTP path retries once on a transient error (FR-02)
+# ---------------------------------------------------------------------------
+
+import urllib.error  # noqa: E402
+
+
+def test_open_retries_once_on_transient_5xx(monkeypatch):
+    calls = {"n": 0}
+
+    class FlakyOpener:
+        def open(self, req, timeout=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise urllib.error.HTTPError(req.full_url, 503, "Busy", {}, None)
+
+            class R:
+                status = 200
+                headers = {"Content-Type": "text/html"}
+
+                def __enter__(self_):
+                    return self_
+
+                def __exit__(self_, *a):
+                    return False
+
+                def geturl(self_):
+                    return req.full_url
+
+                def read(self_, amt=None):
+                    return b"<html>ok</html>"
+
+            return R()
+
+    monkeypatch.setattr(fetch_mod.urllib.request, "build_opener",
+                        lambda *h: FlakyOpener())
+    monkeypatch.setattr(fetch_mod.time, "sleep", lambda s: None)
+
+    status, final, ctype, body = fetch_mod._open("https://ex.com/p", "GET")
+    assert status == 200
+    assert calls["n"] == 2  # first 503 retried, second succeeded
+
+
+def test_open_does_not_retry_on_non_transient_4xx(monkeypatch):
+    calls = {"n": 0}
+
+    class Opener:
+        def open(self, req, timeout=None):
+            calls["n"] += 1
+            raise urllib.error.HTTPError(req.full_url, 401, "Unauthorized", {}, None)
+
+    monkeypatch.setattr(fetch_mod.urllib.request, "build_opener", lambda *h: Opener())
+    monkeypatch.setattr(fetch_mod.time, "sleep", lambda s: None)
+
+    with pytest.raises(urllib.error.HTTPError):
+        fetch_mod._open("https://ex.com/p", "GET")
+    assert calls["n"] == 1  # 401 is not retried

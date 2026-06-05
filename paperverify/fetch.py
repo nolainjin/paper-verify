@@ -36,6 +36,11 @@ TIMEOUT = 10  # seconds
 MAX_BODY = 50 * 1024  # ~50KB of stripped text kept
 MIN_HOST_INTERVAL = 1.0  # seconds between calls to the same host
 MAX_REDIRECTS = 5
+# Transient HTTP statuses worth one retry on the main fetch path (mirrors
+# sources._get). A single transient blip (rate limit / 5xx / timeout) otherwise
+# dropped the citation straight to the Wayback fallback (audit P1-1 / FR-02).
+_HTTP_RETRY_STATUSES = {429, 500, 502, 503, 504}
+_HTTP_RETRY_BACKOFF = 0.5  # seconds before the single retry
 
 # Per-host rate limiting shared across worker threads.
 _host_lock = threading.Lock()
@@ -276,22 +281,39 @@ def _open(url: str, method: str) -> tuple[int, str, str, bytes]:
         req = urllib.request.Request(
             current, method=method, headers={"User-Agent": USER_AGENT, "Accept": "*/*"}
         )
-        try:
-            with opener.open(req, timeout=TIMEOUT) as resp:
-                status = resp.status
-                final = resp.geturl()
-                ctype = resp.headers.get("Content-Type", "")
-                body = resp.read(MAX_BODY * 4) if method == "GET" else b""
-                return status, final, ctype, body
-        except urllib.error.HTTPError as exc:
-            if exc.code not in {301, 302, 303, 307, 308}:
+        # Issue the request with one transient-error retry (429 / 5xx / timeout)
+        # before giving up this hop. A redirect HTTPError is *not* an error here:
+        # it carries the Location and is resolved by the outer loop.
+        redirect_exc: urllib.error.HTTPError | None = None
+        for attempt in range(2):
+            try:
+                with opener.open(req, timeout=TIMEOUT) as resp:
+                    status = resp.status
+                    final = resp.geturl()
+                    ctype = resp.headers.get("Content-Type", "")
+                    body = resp.read(MAX_BODY * 4) if method == "GET" else b""
+                    return status, final, ctype, body
+            except urllib.error.HTTPError as exc:
+                if exc.code in {301, 302, 303, 307, 308}:
+                    redirect_exc = exc
+                    break  # follow it in the outer loop, do not retry
+                if exc.code in _HTTP_RETRY_STATUSES and attempt == 0:
+                    time.sleep(_HTTP_RETRY_BACKOFF)
+                    continue
                 raise
-            location = exc.headers.get("Location")
-            if not location:
+            except (urllib.error.URLError, OSError):
+                if attempt == 0:
+                    time.sleep(_HTTP_RETRY_BACKOFF)
+                    continue
                 raise
-            current = urllib.parse.urljoin(current, location)
-            if exc.code == 303:
-                method = "GET"
+
+        # Reached only on a redirect: resolve Location and loop.
+        location = redirect_exc.headers.get("Location") if redirect_exc else None
+        if not location:
+            raise redirect_exc  # type: ignore[misc]
+        current = urllib.parse.urljoin(current, location)
+        if redirect_exc.code == 303:
+            method = "GET"
     raise ValueError(f"too many redirects: {url}")
 
 
