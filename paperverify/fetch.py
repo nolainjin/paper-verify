@@ -350,6 +350,55 @@ def _archive_url(url: str) -> str | None:
     return None  # genuinely not captured
 
 
+_META_CHARSET_RE = re.compile(
+    rb"""<meta[^>]+charset\s*=\s*["']?\s*([A-Za-z0-9_\-]+)""", re.I
+)
+
+
+def _charset_from_header(ctype: str) -> str | None:
+    """Extract a charset from a Content-Type header, robust to quotes / params.
+
+    Uses :class:`email.message.Message` parameter parsing (handles
+    ``charset="EUC-KR"``, extra ``; boundary=...`` params, casing) instead of a
+    naive ``str.split`` that left quotes in the value and broke ``codecs.lookup``
+    (audit P1-6 / FR-04). Returns ``None`` when no charset is present.
+    """
+    from email.message import Message
+
+    msg = Message()
+    msg["Content-Type"] = ctype or ""
+    cs = msg.get_param("charset")
+    if not cs:
+        return None
+    return str(cs).strip().strip("\"'") or None
+
+
+def _decode_body(body: bytes, ctype: str) -> str:
+    """Decode an HTTP body to text, choosing the charset defensively.
+
+    Order: a UTF-8 BOM (authoritative) > Content-Type ``charset`` > a
+    ``<meta charset>`` declared in the HTML head > UTF-8. Always uses
+    ``errors="replace"`` so a wrong guess degrades gracefully instead of raising.
+    """
+    if body[:3] == b"\xef\xbb\xbf":  # UTF-8 BOM wins outright
+        return body.decode("utf-8-sig", errors="replace")
+
+    charset = _charset_from_header(ctype)
+    if not charset:
+        m = _META_CHARSET_RE.search(body[:2048])
+        if m:
+            charset = m.group(1).decode("ascii", errors="replace").strip()
+
+    for cs in (charset, "utf-8"):
+        if not cs:
+            continue
+        try:
+            return body.decode(cs, errors="replace")
+        except LookupError:
+            continue  # unknown codec name — try the next candidate
+    return body.decode("utf-8", errors="replace")
+
+
 def _fetch_one(url: str, level: str) -> Fetched:
     """Fetch a single URL at the given level (no archive fallback here)."""
     method = "GET" if level in ("L2", "L3") else "GET"
@@ -357,13 +406,7 @@ def _fetch_one(url: str, level: str) -> Fetched:
     status, final, ctype, body = _open(url, method)
     f = Fetched(id=0, status=status, url_final=final, source="http")
     if level != "L1" and body:
-        charset = "utf-8"
-        if "charset=" in ctype:
-            charset = ctype.split("charset=", 1)[-1].split(";")[0].strip() or "utf-8"
-        try:
-            text = body.decode(charset, errors="replace")
-        except (LookupError, UnicodeDecodeError):
-            text = body.decode("utf-8", errors="replace")
+        text = _decode_body(body, ctype)
         title, meta, visible = _strip_html(text)
         f.title = title
         f.abstract = (meta + " " + visible).strip()[:MAX_BODY] if meta else visible

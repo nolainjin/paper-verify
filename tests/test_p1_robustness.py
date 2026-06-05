@@ -330,3 +330,40 @@ def test_tiebreak_arbiter_breaks_a_true_tie():
     assert sc.effective_verdict is Verdict.MISMATCH
     assert sc.breakdown["claim_match"] == 0
     assert sc.breakdown["cross_check"] == 10
+
+
+# ---------------------------------------------------------------------------
+# P1-6 — robust charset decoding (FR-04, Korean page mojibake)
+# ---------------------------------------------------------------------------
+
+
+def test_decode_handles_quoted_charset():
+    # A quoted charset value broke the naive str.split lookup -> mojibake.
+    body = "한국어 본문입니다".encode("euc-kr")
+    text = fetch_mod._decode_body(body, 'text/html; charset="EUC-KR"')
+    assert "한국어" in text
+
+
+def test_decode_handles_charset_with_trailing_params():
+    body = "안녕하세요 세상".encode("euc-kr")
+    text = fetch_mod._decode_body(body, "text/html; charset=euc-kr; boundary=x")
+    assert "안녕하세요" in text
+
+
+def test_decode_falls_back_to_meta_charset_when_header_absent():
+    raw = '<html><head><meta charset="euc-kr"></head><body>{}</body></html>'
+    body = raw.format("메타 차셋 본문").encode("euc-kr")
+    text = fetch_mod._decode_body(body, "text/html")  # no charset in header
+    assert "메타 차셋 본문" in text
+
+
+def test_decode_handles_utf8_bom():
+    body = b"\xef\xbb\xbf" + "BOM-prefixed UTF-8 text".encode("utf-8")
+    text = fetch_mod._decode_body(body, "text/html")
+    assert "BOM-prefixed UTF-8 text" in text
+    assert "﻿" not in text  # BOM stripped
+
+
+def test_decode_defaults_to_utf8_and_never_raises_on_garbage():
+    text = fetch_mod._decode_body(b"\xff\xfe\x00plain ascii tail", "text/html")
+    assert "plain ascii tail" in text  # errors='replace', no exception
