@@ -41,17 +41,29 @@ MAX_REDIRECTS = 5
 _host_lock = threading.Lock()
 _host_last: dict[str, float] = {}
 
-# Markers that suggest a 2xx response is actually a soft-404 / error / placeholder
-# page rather than the cited content. Heuristic — not perfect (see README caveat).
+# Specific phrases that signal a 2xx response is actually a soft-404 / error /
+# placeholder page rather than the cited content. Deliberately narrow multi-word
+# phrases: bare "error" / "404" appear in legitimate academic prose ("standard
+# error", "type I error", "404 nm") and must NOT trip the heuristic (audit P1-3 /
+# CL-6 / FR-07). Heuristic — not perfect (see README caveat).
 _SOFT_404_MARKERS = (
-    "not found",
-    "404",
+    "page not found",
+    "404 not found",
+    "404 error",
+    "error 404",
+    "not found error",
     "page does not exist",
     "page not exist",
-    "page no longer",
-    "error",
+    "page no longer exists",
+    "page no longer available",
+    "page you requested could not be found",
+    "page cannot be found",
+    "could not be found",
+    "no longer available",
+    "content not available",
     "찾을 수 없",
     "존재하지 않",
+    "페이지를 찾을 수",
 )
 _MIN_BODY_CHARS = 200  # stripped text shorter than this on a 2xx is suspicious
 # DOI / arXiv / PubMed id patterns inside a raw URL (for metadata routing).
