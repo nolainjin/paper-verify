@@ -1,0 +1,4 @@
+interface:
+  display_name: "Paper Verify"
+  short_description: "Verify citations and shortlist risky sources."
+  default_prompt: "Verify this document's citations and produce a shortlist of sources that need human review."
