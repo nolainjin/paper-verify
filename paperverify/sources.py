@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -45,8 +46,43 @@ from xml.etree import ElementTree as ET
 CONTACT_EMAIL = "paper-verify@users.noreply.github.com"
 API_USER_AGENT = f"paper-verify/0.1 (https://github.com/nolainjin/paper-verify; mailto:{CONTACT_EMAIL})"
 API_TIMEOUT = 8  # seconds — short, so a slow API does not stall the whole run
+# Upper bound on bytes read from any metadata API response. These endpoints
+# return small JSON / Atom records (a few KB); a 2 MB cap is generous and stops
+# a hostile or misbehaving endpoint from streaming an unbounded body into memory
+# (audit P1-8 / SEC-04, DoS). XML parsing below stays on stdlib ElementTree; the
+# input is now size-bounded and comes only from the fixed official-API hosts, so
+# the classic entity-expansion / billion-laughs vector is mitigated by the cap
+# (a defusedxml dependency was considered but rejected to keep the core stdlib-only).
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _RETRY_STATUSES = {429, 500, 502, 503, 504}
 _ARXIV_NS = {"atom": "http://www.w3.org/2005/Atom"}
+
+# Per-host throttle for the metadata APIs. NCBI E-utilities allow <=3 req/s
+# without a key and arXiv asks for ~3s between calls; the metadata path
+# previously had no throttle, so parallel workers could burst past those limits
+# and trip rate-limit timeouts (audit P1-9 / SA-02). 0.34s => <=~3 req/s/host.
+MIN_HOST_INTERVAL = 0.34  # seconds between calls to the same host
+_host_lock = threading.Lock()
+_host_last: dict[str, float] = {}
+
+
+def _reset_host_clock() -> None:
+    """Clear the per-host throttle state (test hook)."""
+    with _host_lock:
+        _host_last.clear()
+
+
+def _rate_limit(url: str) -> None:
+    """Block until ``MIN_HOST_INTERVAL`` has elapsed for this URL's host."""
+    host = urllib.parse.urlsplit(url).netloc.lower()
+    while True:
+        with _host_lock:
+            now = time.monotonic()
+            wait = MIN_HOST_INTERVAL - (now - _host_last.get(host, 0.0))
+            if wait <= 0:
+                _host_last[host] = now
+                return
+        time.sleep(wait)
 
 # JATS / HTML tags that may wrap a Crossref abstract.
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -76,11 +112,15 @@ def _get(url: str, *, accept: str = "*/*") -> bytes:
     req = urllib.request.Request(
         url, headers={"User-Agent": API_USER_AGENT, "Accept": accept}
     )
+    _rate_limit(url)  # honour per-host fair-use limits (NCBI/arXiv)
     last_exc: Optional[BaseException] = None
     for attempt in range(2):  # 1 initial try + 1 retry
         try:
             with urllib.request.urlopen(req, timeout=API_TIMEOUT) as resp:
-                return resp.read()
+                # Cap the read so a hostile / runaway endpoint cannot exhaust
+                # memory (P1-8 / SEC-04). Read one byte past the cap to detect
+                # (and drop) over-long bodies deterministically.
+                return resp.read(MAX_RESPONSE_BYTES + 1)[:MAX_RESPONSE_BYTES]
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 raise _NotFound(url) from exc

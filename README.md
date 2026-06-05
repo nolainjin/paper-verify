@@ -198,6 +198,21 @@ paper-verify --list-profiles | python -m json.tool
 
 See [`docs/harness-strategy.md`](docs/harness-strategy.md) for the full matrix.
 
+## Agent packaging phases
+
+Treat this repository as a staged agent integration:
+
+| Phase | Artifact | Path | Meaning |
+|---|---|---|---|
+| Phase 1 | Core package | `paperverify/`, CLI, JSON, MCP server | Provider-neutral citation verification engine. |
+| Phase 2 | Codex skill | `integrations/skills/paper-verify/` | Local workflow instructions that teach an agent how to run paper-verify and triage risky sources. |
+| Phase 3 | Codex plugin | `integrations/plugins/paper-verify/` | Installable plugin bundle with the skill plus MCP server registration metadata. |
+
+Use Phase 2 when you want the workflow to be available inside an existing Codex
+setup without packaging a full plugin. Use Phase 3 when you want a distributable
+agent integration: plugin metadata, skill discovery, and MCP server wiring live
+together.
+
 ## How cross-check works
 
 Supply two or more `--judge` flags. Each judge evaluates the same

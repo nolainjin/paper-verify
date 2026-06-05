@@ -23,15 +23,6 @@ _CLAIM_POINTS = {
     Verdict.INACCESSIBLE: 10,
 }
 
-# Most-conservative ordering for consensus after a tie-break (lower = worse).
-_VERDICT_RANK = {
-    Verdict.MISMATCH: 0,
-    Verdict.INACCESSIBLE: 1,
-    Verdict.UNCERTAIN: 2,
-    Verdict.PARTIAL: 3,
-    Verdict.MATCH: 4,
-}
-
 _YEAR_RE = re.compile(r"\b(1[89]\d{2}|20\d{2})\b")
 _AUTHOR_RE = re.compile(r"\b([A-Z][a-z]{2,})\b")
 _WORD_RE = re.compile(r"[a-z]+")
@@ -114,10 +105,11 @@ def _consensus_verdict(
 
     Single judge: that verdict, no cross-check credit. 2+ judges that agree:
     agreement, 10-pt credit. 2+ that disagree: if a ``tiebreak`` verdict is
-    supplied, take the most-conservative across all verdicts (incl. the
-    tie-break) as consensus and award cross-check credit (the run reached a
-    decision); with no tie-break, the effective verdict is ``Uncertain`` and
-    cross-check stays 0.
+    supplied, take the **majority** verdict across all judgements plus the
+    tie-break (``Inaccessible`` excluded from the claim axis — it is an
+    availability signal, not a claim judgement) and award cross-check credit;
+    the tie-break judge arbitrates a genuine tie between distinct verdicts. With
+    no tie-break, the effective verdict is ``Uncertain`` and cross-check stays 0.
     """
     if not judgements:
         return Verdict.INACCESSIBLE, False, ""
@@ -131,8 +123,22 @@ def _consensus_verdict(
     # Disagreement.
     if tiebreak is not None:
         all_verdicts = [j.verdict for j in judgements] + [tiebreak.verdict]
-        consensus = min(all_verdicts, key=lambda v: _VERDICT_RANK[v])
-        return consensus, True, "resolved by tie-break (most-conservative)"
+        # INACCESSIBLE is an availability signal, not a claim judgement, so it
+        # must not become the claim verdict when the reachable judges agree
+        # (audit P1-4 / JS-02). Score the claim on the substantive verdicts only.
+        substantive = [v for v in all_verdicts if v is not Verdict.INACCESSIBLE]
+        pool = substantive or all_verdicts  # all-inaccessible: fall back to all
+        # Majority vote — the most-supported verdict, not the single most
+        # pessimistic one (the old min() let one dissenting vote drag the score).
+        counts: dict[Verdict, int] = {}
+        for v in pool:
+            counts[v] = counts.get(v, 0) + 1
+        top = max(counts.values())
+        winners = [v for v in pool if counts[v] == top]
+        if len(set(winners)) == 1:
+            return winners[0], True, "resolved by majority (tie-break included)"
+        # A genuine tie between distinct verdicts: the tie-break judge arbitrates.
+        return tiebreak.verdict, True, "resolved by tie-break arbiter"
     return Verdict.UNCERTAIN, False, "judges split, no tie-break — flagged for human review"
 
 

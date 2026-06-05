@@ -1,6 +1,7 @@
 """Tests for frontend harness profiles."""
 
 import json
+from pathlib import Path
 import subprocess
 import sys
 
@@ -8,6 +9,8 @@ import pytest
 
 from paperverify.harness import get_profile, list_profiles
 from paperverify.judge import make_judge
+
+ROOT = Path(__file__).resolve().parents[1]
 
 _PROFILE_DICT_KEYS = {
     "key",
@@ -117,3 +120,36 @@ def test_cli_explicit_judge_wins_over_profile(tmp_path):
     # Explicit --judge keyword wins; the profile's recommended judges do not override.
     assert data["judges"] == ["keyword"]
 
+
+def test_phase2_skill_artifact_matches_triage_contract():
+    skill = (ROOT / "integrations/skills/paper-verify/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "name: paper-verify" in skill
+    assert "paper-verify <file> --level L1 --json" in skill
+    assert "effective_verdict" in skill
+    assert "Must Review" in skill
+
+
+def test_phase3_plugin_manifest_links_skill_and_mcp():
+    manifest = json.loads(
+        (ROOT / "integrations/plugins/paper-verify/.codex-plugin/plugin.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    mcp = json.loads(
+        (ROOT / "integrations/plugins/paper-verify/.mcp.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    skill = ROOT / "integrations/plugins/paper-verify/skills/paper-verify/SKILL.md"
+    agent_meta = (
+        ROOT / "integrations/plugins/paper-verify/skills/paper-verify/agents/openai.yaml"
+    )
+
+    assert manifest["name"] == "paper-verify"
+    assert manifest["skills"] == "./skills/"
+    assert manifest["mcpServers"] == "./.mcp.json"
+    assert skill.exists()
+    assert agent_meta.exists()
+    assert mcp["mcpServers"]["paper-verify"]["command"] == "paper-verify-mcp"

@@ -73,6 +73,12 @@ def test_whole_chain_fails_is_inaccessible_source_none(monkeypatch):
         raise urllib.error.URLError("unreachable")
 
     monkeypatch.setattr(fetch_mod, "_fetch_one", fail)
+    # Keep the test network-free: pretend the page was archived so the chain
+    # exercises the archive branch without a live Availability API call, then
+    # the (mocked) archive fetch also fails -> source "none".
+    monkeypatch.setattr(
+        fetch_mod, "_archive_url", lambda url: "https://web.archive.org/web/2/" + url
+    )
 
     f = fetch(_doi_cite(), level="L2")
     assert f.source == "none"
@@ -253,7 +259,7 @@ def test_disagree_with_tiebreak_gets_consensus_and_cross_check():
         tiebreak_judgement=_j("t", Verdict.PARTIAL),
     )
     assert sc.breakdown["cross_check"] == 10
-    # most-conservative across {Match, Partial, Partial} == Partial == 25
+    # majority across {Match, Partial, Partial} == Partial == 25
     assert sc.breakdown["claim_match"] == 25
 
 

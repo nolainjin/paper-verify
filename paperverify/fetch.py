@@ -36,22 +36,39 @@ TIMEOUT = 10  # seconds
 MAX_BODY = 50 * 1024  # ~50KB of stripped text kept
 MIN_HOST_INTERVAL = 1.0  # seconds between calls to the same host
 MAX_REDIRECTS = 5
+# Transient HTTP statuses worth one retry on the main fetch path (mirrors
+# sources._get). A single transient blip (rate limit / 5xx / timeout) otherwise
+# dropped the citation straight to the Wayback fallback (audit P1-1 / FR-02).
+_HTTP_RETRY_STATUSES = {429, 500, 502, 503, 504}
+_HTTP_RETRY_BACKOFF = 0.5  # seconds before the single retry
 
 # Per-host rate limiting shared across worker threads.
 _host_lock = threading.Lock()
 _host_last: dict[str, float] = {}
 
-# Markers that suggest a 2xx response is actually a soft-404 / error / placeholder
-# page rather than the cited content. Heuristic — not perfect (see README caveat).
+# Specific phrases that signal a 2xx response is actually a soft-404 / error /
+# placeholder page rather than the cited content. Deliberately narrow multi-word
+# phrases: bare "error" / "404" appear in legitimate academic prose ("standard
+# error", "type I error", "404 nm") and must NOT trip the heuristic (audit P1-3 /
+# CL-6 / FR-07). Heuristic — not perfect (see README caveat).
 _SOFT_404_MARKERS = (
-    "not found",
-    "404",
+    "page not found",
+    "404 not found",
+    "404 error",
+    "error 404",
+    "not found error",
     "page does not exist",
     "page not exist",
-    "page no longer",
-    "error",
+    "page no longer exists",
+    "page no longer available",
+    "page you requested could not be found",
+    "page cannot be found",
+    "could not be found",
+    "no longer available",
+    "content not available",
     "찾을 수 없",
     "존재하지 않",
+    "페이지를 찾을 수",
 )
 _MIN_BODY_CHARS = 200  # stripped text shorter than this on a 2xx is suspicious
 # DOI / arXiv / PubMed id patterns inside a raw URL (for metadata routing).
@@ -264,23 +281,122 @@ def _open(url: str, method: str) -> tuple[int, str, str, bytes]:
         req = urllib.request.Request(
             current, method=method, headers={"User-Agent": USER_AGENT, "Accept": "*/*"}
         )
-        try:
-            with opener.open(req, timeout=TIMEOUT) as resp:
-                status = resp.status
-                final = resp.geturl()
-                ctype = resp.headers.get("Content-Type", "")
-                body = resp.read(MAX_BODY * 4) if method == "GET" else b""
-                return status, final, ctype, body
-        except urllib.error.HTTPError as exc:
-            if exc.code not in {301, 302, 303, 307, 308}:
+        # Issue the request with one transient-error retry (429 / 5xx / timeout)
+        # before giving up this hop. A redirect HTTPError is *not* an error here:
+        # it carries the Location and is resolved by the outer loop.
+        redirect_exc: urllib.error.HTTPError | None = None
+        for attempt in range(2):
+            try:
+                with opener.open(req, timeout=TIMEOUT) as resp:
+                    status = resp.status
+                    final = resp.geturl()
+                    ctype = resp.headers.get("Content-Type", "")
+                    body = resp.read(MAX_BODY * 4) if method == "GET" else b""
+                    return status, final, ctype, body
+            except urllib.error.HTTPError as exc:
+                if exc.code in {301, 302, 303, 307, 308}:
+                    redirect_exc = exc
+                    break  # follow it in the outer loop, do not retry
+                if exc.code in _HTTP_RETRY_STATUSES and attempt == 0:
+                    time.sleep(_HTTP_RETRY_BACKOFF)
+                    continue
                 raise
-            location = exc.headers.get("Location")
-            if not location:
+            except (urllib.error.URLError, OSError):
+                if attempt == 0:
+                    time.sleep(_HTTP_RETRY_BACKOFF)
+                    continue
                 raise
-            current = urllib.parse.urljoin(current, location)
-            if exc.code == 303:
-                method = "GET"
+
+        # Reached only on a redirect: resolve Location and loop.
+        location = redirect_exc.headers.get("Location") if redirect_exc else None
+        if not location:
+            raise redirect_exc  # type: ignore[misc]
+        current = urllib.parse.urljoin(current, location)
+        if redirect_exc.code == 303:
+            method = "GET"
     raise ValueError(f"too many redirects: {url}")
+
+
+_WAYBACK_AVAILABLE_API = "https://archive.org/wayback/available?url="
+# "Latest snapshot" redirect form — used when the Availability API itself is
+# unreachable. The bare ``/web/<url>`` form (no timestamp) was unreliable.
+_WAYBACK_REDIRECT = "https://web.archive.org/web/2/"
+
+
+def _archive_url(url: str) -> str | None:
+    """Resolve a real Wayback snapshot URL for ``url`` (audit P1-2 / FR-01).
+
+    Queries the Wayback Availability API and returns the closest captured
+    snapshot's *timestamped* URL. Returns ``None`` when the page was never
+    captured (distinct from a lookup failure). If the Availability API itself
+    is unreachable, degrades to the ``/web/2/<url>`` "latest snapshot" redirect
+    form rather than the old timestamp-less path.
+    """
+    import json as _json
+
+    api = _WAYBACK_AVAILABLE_API + urllib.parse.quote(url, safe="")
+    try:
+        _status, _final, _ctype, body = _open(api, "GET")
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError):
+        return _WAYBACK_REDIRECT + url  # API down — best-effort redirect form
+    try:
+        data = _json.loads(body.decode("utf-8", errors="replace") or "{}")
+    except (ValueError, AttributeError):
+        return _WAYBACK_REDIRECT + url
+    closest = ((data.get("archived_snapshots") or {}).get("closest") or {})
+    snap = closest.get("url")
+    if closest.get("available") and snap:
+        return snap
+    return None  # genuinely not captured
+
+
+_META_CHARSET_RE = re.compile(
+    rb"""<meta[^>]+charset\s*=\s*["']?\s*([A-Za-z0-9_\-]+)""", re.I
+)
+
+
+def _charset_from_header(ctype: str) -> str | None:
+    """Extract a charset from a Content-Type header, robust to quotes / params.
+
+    Uses :class:`email.message.Message` parameter parsing (handles
+    ``charset="EUC-KR"``, extra ``; boundary=...`` params, casing) instead of a
+    naive ``str.split`` that left quotes in the value and broke ``codecs.lookup``
+    (audit P1-6 / FR-04). Returns ``None`` when no charset is present.
+    """
+    from email.message import Message
+
+    msg = Message()
+    msg["Content-Type"] = ctype or ""
+    cs = msg.get_param("charset")
+    if not cs:
+        return None
+    return str(cs).strip().strip("\"'") or None
+
+
+def _decode_body(body: bytes, ctype: str) -> str:
+    """Decode an HTTP body to text, choosing the charset defensively.
+
+    Order: a UTF-8 BOM (authoritative) > Content-Type ``charset`` > a
+    ``<meta charset>`` declared in the HTML head > UTF-8. Always uses
+    ``errors="replace"`` so a wrong guess degrades gracefully instead of raising.
+    """
+    if body[:3] == b"\xef\xbb\xbf":  # UTF-8 BOM wins outright
+        return body.decode("utf-8-sig", errors="replace")
+
+    charset = _charset_from_header(ctype)
+    if not charset:
+        m = _META_CHARSET_RE.search(body[:2048])
+        if m:
+            charset = m.group(1).decode("ascii", errors="replace").strip()
+
+    for cs in (charset, "utf-8"):
+        if not cs:
+            continue
+        try:
+            return body.decode(cs, errors="replace")
+        except LookupError:
+            continue  # unknown codec name — try the next candidate
+    return body.decode("utf-8", errors="replace")
 
 
 def _fetch_one(url: str, level: str) -> Fetched:
@@ -290,13 +406,7 @@ def _fetch_one(url: str, level: str) -> Fetched:
     status, final, ctype, body = _open(url, method)
     f = Fetched(id=0, status=status, url_final=final, source="http")
     if level != "L1" and body:
-        charset = "utf-8"
-        if "charset=" in ctype:
-            charset = ctype.split("charset=", 1)[-1].split(";")[0].strip() or "utf-8"
-        try:
-            text = body.decode(charset, errors="replace")
-        except (LookupError, UnicodeDecodeError):
-            text = body.decode("utf-8", errors="replace")
+        text = _decode_body(body, ctype)
         title, meta, visible = _strip_html(text)
         f.title = title
         f.abstract = (meta + " " + visible).strip()[:MAX_BODY] if meta else visible
@@ -376,8 +486,18 @@ def fetch(citation: Citation, level: str = "L2") -> Fetched:
         return f
     except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError) as exc:
         first_error = getattr(exc, "code", None) or str(exc)
-        # Step 3 — Wayback Machine fallback.
-        archive_url = "https://web.archive.org/web/" + url
+        status = getattr(exc, "code", 0) or 0
+        status = int(status) if isinstance(status, int) else 0
+        # Step 3 — Wayback Machine fallback, via a resolved timestamped snapshot.
+        archive_url = _archive_url(url)
+        if archive_url is None:
+            # The page was never archived — say so explicitly (No Silent Fallback).
+            return Fetched(
+                id=citation.id,
+                status=status,
+                error=f"{first_error}; archive: not captured",
+                source="none",
+            )
         try:
             f = _fetch_one(archive_url, level)
             f.id = citation.id
@@ -385,10 +505,9 @@ def fetch(citation: Citation, level: str = "L2") -> Fetched:
             f.source = "archive"
             return f
         except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError) as exc2:
-            status = getattr(exc, "code", 0) or 0
             return Fetched(
                 id=citation.id,
-                status=int(status) if isinstance(status, int) else 0,
+                status=status,
                 error=f"{first_error}; archive: {getattr(exc2, 'code', None) or exc2}",
                 source="none",
             )
