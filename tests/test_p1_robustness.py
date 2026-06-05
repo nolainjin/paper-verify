@@ -367,3 +367,36 @@ def test_decode_handles_utf8_bom():
 def test_decode_defaults_to_utf8_and_never_raises_on_garbage():
     text = fetch_mod._decode_body(b"\xff\xfe\x00plain ascii tail", "text/html")
     assert "plain ascii tail" in text  # errors='replace', no exception
+
+
+# ---------------------------------------------------------------------------
+# P1-9 — metadata API hosts are rate-limited too (SA-02, NCBI/arXiv fair use)
+# ---------------------------------------------------------------------------
+
+
+def test_get_rate_limits_per_host(monkeypatch):
+    # Two back-to-back calls to the same host must be spaced by the per-host
+    # minimum interval — previously the metadata path had no throttle at all.
+    sleeps = []
+    # Virtual clock so the throttle loop is deterministic and never busy-waits:
+    # a recorded sleep advances the clock by that amount.
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(sources.time, "monotonic", lambda: clock["t"])
+
+    def fake_sleep(s):
+        sleeps.append(s)
+        clock["t"] += s
+
+    monkeypatch.setattr(sources.time, "sleep", fake_sleep)
+    monkeypatch.setattr(sources.urllib.request, "urlopen",
+                        lambda req, timeout=None: _FakeResp(b"{}"))
+    sources._reset_host_clock()
+
+    sources._get("https://eutils.ncbi.nlm.nih.gov/x")
+    sources._get("https://eutils.ncbi.nlm.nih.gov/y")  # same host -> must wait
+
+    assert any(s > 0 for s in sleeps), "expected a per-host throttle sleep"
+
+
+def test_get_min_host_interval_is_set():
+    assert sources.MIN_HOST_INTERVAL >= 0.3  # NCBI: <=3 req/s
