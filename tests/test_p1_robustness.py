@@ -209,3 +209,64 @@ def test_open_does_not_retry_on_non_transient_4xx(monkeypatch):
     with pytest.raises(urllib.error.HTTPError):
         fetch_mod._open("https://ex.com/p", "GET")
     assert calls["n"] == 1  # 401 is not retried
+
+
+# ---------------------------------------------------------------------------
+# P1-2 — Wayback fallback resolves a real timestamped snapshot (FR-01 / TC-03)
+# ---------------------------------------------------------------------------
+
+import json as _json  # noqa: E402
+
+
+def test_archive_url_uses_availability_api_timestamp(monkeypatch):
+    snap = "http://web.archive.org/web/20200101000000/https://ex.com/p"
+    payload = _json.dumps(
+        {"archived_snapshots": {"closest": {"available": True, "url": snap}}}
+    ).encode()
+    monkeypatch.setattr(
+        fetch_mod, "_open",
+        lambda url, method: (200, url, "application/json", payload),
+    )
+    resolved = fetch_mod._archive_url("https://ex.com/p")
+    assert resolved == snap
+    assert "/web/2020" in resolved  # carries a concrete timestamp
+
+
+def test_archive_url_returns_none_when_not_captured(monkeypatch):
+    payload = _json.dumps({"archived_snapshots": {}}).encode()
+    monkeypatch.setattr(
+        fetch_mod, "_open",
+        lambda url, method: (200, url, "application/json", payload),
+    )
+    # Not captured is distinct from "lookup failed" -> None means "no snapshot".
+    assert fetch_mod._archive_url("https://ex.com/p") is None
+
+
+def test_archive_url_falls_back_to_redirect_form_on_api_error(monkeypatch):
+    def boom(url, method):
+        raise urllib.error.URLError("availability api down")
+
+    monkeypatch.setattr(fetch_mod, "_open", boom)
+    resolved = fetch_mod._archive_url("https://ex.com/p")
+    # Degrades to the /web/2/ "latest snapshot" redirect form, not the
+    # timestamp-less bare path.
+    assert resolved == "https://web.archive.org/web/2/https://ex.com/p"
+
+
+def test_fetch_skips_archive_when_no_snapshot(monkeypatch):
+    from paperverify.models import Citation
+
+    monkeypatch.setattr(sources, "fetch_doi_metadata", lambda doi: None)
+
+    def fail(url, level):
+        raise urllib.error.URLError("dead")
+
+    monkeypatch.setattr(fetch_mod, "_fetch_one", fail)
+    monkeypatch.setattr(fetch_mod, "_archive_url", lambda url: None)  # not captured
+
+    f = fetch_mod.fetch(
+        Citation(id=3, type="URL", ref="https://ex.com/p", context="c", line=1),
+        level="L2",
+    )
+    assert f.source == "none"
+    assert "archive: not captured" in f.error
