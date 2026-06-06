@@ -161,7 +161,15 @@ def score_citation(
 
     if level == "L1":
         if fetched is not None and fetched.ok:
-            breakdown["url_alive"] = 50 if fetched.soft_404_suspect else 100
+            # A metadata hit can be 2xx (the API answered) while the human-facing
+            # landing URL is dead. When the landing status was actually probed
+            # (not None) and is non-2xx, the link is dead regardless of the
+            # metadata status — "metadata exists" != "the URL resolves" (H1).
+            landing = fetched.landing_status
+            if landing is not None and not (200 <= landing < 300):
+                breakdown["url_alive"] = 0
+            else:
+                breakdown["url_alive"] = 50 if fetched.soft_404_suspect else 100
         else:
             breakdown["url_alive"] = 0
         return ScoredCitation(
