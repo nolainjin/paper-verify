@@ -166,6 +166,59 @@ def _numeric_tokens(text: str) -> set[str]:
     return {m.group(0).replace(",", "") for m in _NUM_RE.finditer(text)}
 
 
+# Direction-of-effect antonym groups. Token overlap is blind to polarity, so a
+# claim that a quantity "increased" and a source saying it "decreased" share the
+# figure tokens and score a spurious Match. If the claim asserts one direction
+# and the source the opposite, the keyword heuristic cannot call it a Match (H2).
+_POLARITY_GROUPS = [
+    {"increase", "increased", "increases", "increasing", "rise", "rises",
+     "rose", "rising", "grew", "grow", "grows", "growing", "growth", "gain",
+     "gained", "gains", "higher", "more", "up", "surge", "surged", "doubled",
+     "tripled", "improve", "improved", "improves", "improving", "improvement"},
+    {"decrease", "decreased", "decreases", "decreasing", "fall", "falls",
+     "fell", "falling", "drop", "dropped", "drops", "decline", "declined",
+     "declines", "declining", "shrank", "shrink", "shrinks", "loss", "lost",
+     "lower", "less", "fewer", "down", "plunge", "plunged", "halved",
+     "worsen", "worsened", "worsens", "worsening"},
+]
+
+# Negation cues — a polarity flip via "not / no / never / failed to".
+_NEGATION = {"not", "no", "never", "neither", "without", "failed", "fails",
+             "fail", "cannot", "couldnt", "didnt", "doesnt", "dont", "isnt",
+             "wasnt", "werent", "wont", "lacked", "lacks", "absence", "absent"}
+
+_WORD_RE_LOWER = re.compile(r"[a-z']+")
+
+
+def _word_set(text: str) -> set[str]:
+    return {w.replace("'", "") for w in _WORD_RE_LOWER.findall(text.lower())}
+
+
+def _polarity_conflict(claim: str, source: str) -> bool:
+    """True if claim and source disagree on direction-of-effect or negation.
+
+    Conservative: only fires when one side carries words from one antonym group
+    and the other side carries words from the *opposite* group (and not also the
+    same group — mixed text is ambiguous, left to a real judge), or when exactly
+    one side is negated. Pure overlap with no directional words is unaffected.
+    """
+    cw, sw = _word_set(claim), _word_set(source)
+
+    pos, neg = _POLARITY_GROUPS
+    claim_pos, claim_neg = bool(cw & pos), bool(cw & neg)
+    src_pos, src_neg = bool(sw & pos), bool(sw & neg)
+    # Opposite direction, each side unambiguous (not carrying both directions).
+    if claim_pos and not claim_neg and src_neg and not src_pos:
+        return True
+    if claim_neg and not claim_pos and src_pos and not src_neg:
+        return True
+
+    # Negation mismatch: exactly one side negates the shared statement.
+    if (bool(cw & _NEGATION)) != (bool(sw & _NEGATION)):
+        return True
+    return False
+
+
 class KeywordJudge:
     """Token-overlap heuristic. No dependencies, clearly low-confidence."""
 
@@ -200,6 +253,18 @@ class KeywordJudge:
                     f"token overlap {overlap:.0%} but claim figure(s) "
                     f"{', '.join(missing)} absent from source (heuristic clamp)"
                 )
+
+        # H2: token overlap is blind to direction-of-effect and negation. A claim
+        # that a quantity *increased* and a source saying it *decreased* (the
+        # figures may even agree) is a contradiction, not a Match. Clamp Match
+        # down to Partial so the no-API-key keyword path never reports a polarity
+        # conflict as semantically supported.
+        if v is Verdict.MATCH and _polarity_conflict(claim_context, source_text):
+            v = Verdict.PARTIAL
+            reason = (
+                f"token overlap {overlap:.0%} but claim and source disagree on "
+                "direction/negation — cannot confirm support (heuristic clamp)"
+            )
 
         return Judgement(self.name, v, reason)
 

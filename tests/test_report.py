@@ -139,7 +139,7 @@ def test_long_ref_is_excerpted():
 def test_render_json_schema_contract():
     rep = _report([_sc(95, id=1), _sc(10, Verdict.MISMATCH, id=2)])
     j = render_json(rep)
-    assert j["schema_version"] == SCHEMA_VERSION == "4"
+    assert j["schema_version"] == SCHEMA_VERSION == "5"
     assert j["source_file"] == "docs/sample.md"
     assert j["level"] == "L2"
     assert j["judges"] == ["keyword"]
