@@ -135,10 +135,24 @@ def _consensus_verdict(
             counts[v] = counts.get(v, 0) + 1
         top = max(counts.values())
         winners = [v for v in pool if counts[v] == top]
-        if len(set(winners)) == 1:
-            return winners[0], True, "resolved by majority (tie-break included)"
-        # A genuine tie between distinct verdicts: the tie-break judge arbitrates.
-        return tiebreak.verdict, True, "resolved by tie-break arbiter"
+        resolved = winners[0] if len(set(winners)) == 1 else tiebreak.verdict
+        note = (
+            "resolved by majority (tie-break included)"
+            if len(set(winners)) == 1
+            else "resolved by tie-break arbiter"
+        )
+        # Cross-check credit (+10) is *genuine multi-judge agreement*, not the
+        # mere fact that a tie-break produced an answer. Require >=2 substantive
+        # (non-INACCESSIBLE) *primary* judges holding the resolved verdict; a lone
+        # substantive judge that a tie-break sided with is not corroborated (M1).
+        primary_agree = sum(
+            1
+            for j in judgements
+            if j.verdict is not Verdict.INACCESSIBLE and j.verdict is resolved
+        )
+        if primary_agree >= 2:
+            return resolved, True, note
+        return resolved, False, note + " (single substantive judge — no cross-check)"
     return Verdict.UNCERTAIN, False, "judges split, no tie-break — flagged for human review"
 
 

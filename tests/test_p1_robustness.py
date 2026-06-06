@@ -329,7 +329,11 @@ def test_tiebreak_arbiter_breaks_a_true_tie():
     )
     assert sc.effective_verdict is Verdict.MISMATCH
     assert sc.breakdown["claim_match"] == 0
-    assert sc.breakdown["cross_check"] == 10
+    # M1 fix: a true tie has only ONE primary substantive judge (b) on the
+    # winning verdict; the arbiter is not a peer, so this is not a cross-checked
+    # consensus. The prior cross_check==10 here fixated the M1 defect (a lone
+    # substantive judge looking corroborated by the arbiter). Now expects 0.
+    assert sc.breakdown["cross_check"] == 0
 
 
 # ---------------------------------------------------------------------------
