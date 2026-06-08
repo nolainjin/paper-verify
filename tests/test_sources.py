@@ -250,17 +250,33 @@ def test_uncertain_claim_match_is_15():
     assert sc.breakdown["claim_match"] == 15  # below Partial=25, above Inaccessible=10
 
 
-def test_disagree_with_tiebreak_gets_consensus_and_cross_check():
-    # Two judges disagree; tie-break supplied -> consensus reached, 10 cross-check pts.
+def test_disagree_with_tiebreak_resolves_consensus():
+    # Two judges disagree; tie-break supplied -> consensus reached.
     sc = score_citation(
         _cite(),
         _fetched(),
         [_j("a", Verdict.MATCH), _j("b", Verdict.PARTIAL)],
         tiebreak_judgement=_j("t", Verdict.PARTIAL),
     )
-    assert sc.breakdown["cross_check"] == 10
     # majority across {Match, Partial, Partial} == Partial == 25
     assert sc.breakdown["claim_match"] == 25
+    # M1 fix: only ONE *primary* judge (b) holds the winning verdict Partial; the
+    # tie-break arbiter is not a corroborating peer, so this is not a
+    # cross-checked consensus. The prior cross_check==10 fixated the M1 defect.
+    assert sc.breakdown["cross_check"] == 0
+
+
+def test_two_primary_agreeing_with_tiebreak_keeps_cross_check():
+    # Two primary judges already agree on Partial (+ a dissenter); the winner has
+    # >=2 substantive primary supporters -> genuine cross-check, 10 pts.
+    sc = score_citation(
+        _cite(),
+        _fetched(),
+        [_j("a", Verdict.PARTIAL), _j("b", Verdict.PARTIAL), _j("c", Verdict.MATCH)],
+        tiebreak_judgement=_j("t", Verdict.PARTIAL),
+    )
+    assert sc.breakdown["claim_match"] == 25
+    assert sc.breakdown["cross_check"] == 10
 
 
 def test_disagree_no_tiebreak_is_uncertain_and_zero_cross_check():
@@ -291,10 +307,11 @@ def test_parse_response_recognises_uncertain():
     assert "settle" in reason
 
 
-def test_schema_version_is_4():
+def test_schema_version_is_5():
     from paperverify.report import SCHEMA_VERSION
 
-    assert SCHEMA_VERSION == "4"
+    # Bumped 4 -> 5 (additive): top-level "keyword_only" flag (H2 report signal).
+    assert SCHEMA_VERSION == "5"
 
 
 def test_fetched_round_trips_new_fields():

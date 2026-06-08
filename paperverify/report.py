@@ -16,7 +16,23 @@ from .models import Report, ScoredCitation, Tier, Verdict
 #   "soft_404_suspect" (bool); added the "Uncertain" verdict. Additive.
 #   "3" -> "4": added per-citation consensus/effective_verdict fields so JSON
 #   consumers can read the verdict used for scoring directly.
-SCHEMA_VERSION = "4"
+#   "4" -> "5": added top-level "keyword_only" (bool) — True when every judge
+#   used was the dependency-free keyword heuristic (token overlap only, no
+#   semantic verification), so consumers can flag the result for manual review.
+SCHEMA_VERSION = "5"
+
+
+def _is_keyword_only(report: Report) -> bool:
+    """True when every judge used is the dependency-free keyword heuristic.
+
+    The keyword judge does token overlap only — it cannot confirm that a source
+    *semantically supports* a claim (it is blind to direction/negation; see the
+    H2 clamp in judge.py). A keyword-only run therefore carries no semantic
+    verification and its scores must be read as "needs manual spot-check".
+    """
+    if not report.judges:
+        return False
+    return all(j.strip().lower() == "keyword" for j in report.judges)
 
 _TIER_ORDER = [Tier.F, Tier.C, Tier.B, Tier.A]
 _TIER_LABEL = {
@@ -67,6 +83,15 @@ def render_markdown(report: Report) -> str:
     lines.append(f"- Citations: {len(report.scored)}")
     lines.append(f"- Overall score: **{overall}/100 {otier.symbol} {otier.value}**")
     lines.append("")
+    if _is_keyword_only(report):
+        lines.append(
+            "> ℹ️ **Keyword-only run — not a semantic verification.** Every judge "
+            "was the dependency-free `keyword` heuristic (token overlap only, no "
+            "API key). It cannot confirm a source *supports* a claim — claim "
+            "scores here need a manual spot-check. Re-run with an LLM judge "
+            "(`--judge anthropic|openai|gemini`) for semantic verification."
+        )
+        lines.append("")
 
     # Tier distribution
     dist = report.tier_distribution()
@@ -172,6 +197,7 @@ def render_json(report: Report) -> dict:
         "overall_score": report.overall_score,
         "overall_tier": report.overall_tier.value,
         "has_failure": report.has_failure,
+        "keyword_only": _is_keyword_only(report),
         "tier_distribution": {t.value: dist.get(t, 0) for t in Tier},
         "citations": [sc.to_dict() for sc in report.scored],
     }

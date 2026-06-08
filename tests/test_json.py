@@ -18,6 +18,7 @@ _TOP_LEVEL_KEYS = {
     "overall_score",
     "overall_tier",
     "has_failure",
+    "keyword_only",
     "tier_distribution",
     "citations",
 }

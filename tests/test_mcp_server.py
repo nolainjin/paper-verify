@@ -18,7 +18,7 @@ from paperverify import mcp_server
 
 def test_verify_text_returns_json_dict():
     out = mcp_server.verify_text_impl("No citations here.", level="L1")
-    assert out["schema_version"] == "4"
+    assert out["schema_version"] == "5"
     assert out["source_file"] == "<text>"
     assert out["level"] == "L1"
     assert isinstance(out["citations"], list)
@@ -60,7 +60,7 @@ def test_verify_file_happy_path(tmp_path):
     doc = tmp_path / "doc.md"
     doc.write_text("A plain note with no citations.\n")
     out = mcp_server.verify_file_impl(str(doc), level="L1")
-    assert out["schema_version"] == "4"
+    assert out["schema_version"] == "5"
     assert out["source_file"] == str(doc)
 
 

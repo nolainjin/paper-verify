@@ -24,6 +24,12 @@ PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 
 CTX_CHARS = 100  # characters of context kept on each side of the match
 
+# A DOI carried inside a (dx.)doi.org URL — used to dedupe a bare DOI elsewhere
+# in the document against its own resolver URL (same physical source, CL-1/M2).
+_DOI_IN_URL_RE = re.compile(
+    r"^https?://(?:dx\.)?doi\.org/(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)$", re.I
+)
+
 
 def _line_index(text: str) -> list[int]:
     """Return the start offset of every line (offset 0 starts line 1)."""
@@ -76,6 +82,14 @@ def extract(text: str) -> list[Citation]:
             if key in seen:
                 continue
             seen.add(key)
+            # A (dx.)doi.org URL *is* a DOI resolver: pre-claim the embedded DOI
+            # so the same DOI written bare elsewhere dedupes against this URL
+            # rather than counting as a second citation (M2). A *different* bare
+            # DOI keeps its own key and is unaffected.
+            if type_name == "URL":
+                doi_m = _DOI_IN_URL_RE.match(ref)
+                if doi_m:
+                    seen.add(("DOI", doi_m.group(1).rstrip(".,;:!?)").lower()))
             cid += 1
             start = max(0, m.start() - CTX_CHARS)
             end = min(len(text), m.end() + CTX_CHARS)
