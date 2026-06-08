@@ -111,7 +111,7 @@ def test_build_server_registers_all_tools(fake_mcp):
 def test_build_server_verify_text_tool_runs_pipeline(fake_mcp):
     server = mcp_server.build_server()
     out = server.tools["verify_text"]("No citations here.", level="L1")
-    assert out["schema_version"] == "4"
+    assert out["schema_version"] == "5"
     assert out["source_file"] == "<text>"
 
 
@@ -120,7 +120,7 @@ def test_build_server_verify_file_tool_delegates(fake_mcp, tmp_path):
     doc.write_text("A note with no citations.\n")
     server = mcp_server.build_server()
     out = server.tools["verify_file"](str(doc), level="L1")
-    assert out["schema_version"] == "4"
+    assert out["schema_version"] == "5"
     assert out["source_file"] == str(doc)
 
 
