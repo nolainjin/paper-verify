@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Feature List (harness primitive)",
+  "type": "object",
+  "required": ["features"],
+  "properties": {
+    "project": { "type": "string" },
+    "note": { "type": "string" },
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "behavior", "verification", "state"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "behavior": { "type": "string", "description": "Observable behavior, not implementation." },
+          "verification": { "type": "string", "description": "Exact shell command; exit 0 == feature satisfied." },
+          "dependencies": { "type": "array", "items": { "type": "string" } },
+          "state": { "type": "string", "enum": ["not-started", "active", "blocked", "passing"] },
+          "evidence": { "type": "string" }
+        }
+      }
+    }
+  }
+}

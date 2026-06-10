@@ -1,0 +1,97 @@
+{
+  "$schema": "./tools/feature_list.schema.json",
+  "project": "paper-verify",
+  "note": "Harness primitive (learn-harness-engineering L08 pilot). Each feature = (behavior, verification, state, evidence). State -> passing ONLY via tools/feature_gate.py running the verification command. Do not hand-edit state to 'passing'; the gate controls transitions. Initial states reflect docs/harness/2026-06-04_paper-verify-audit/01_BACKLOG.md (the human doc) — run the gate to reconcile with ground truth.",
+  "features": [
+    {
+      "id": "P1-1",
+      "name": "HTTP retry/backoff on transient errors",
+      "behavior": "Main fetch path retries once with backoff on a transient 5xx/timeout; does not retry on non-transient 4xx.",
+      "verification": "python -m pytest tests/test_p1_robustness.py -k 'retries or does_not_retry' -q",
+      "dependencies": [],
+      "state": "passing",
+      "evidence": "2026-06-09 feature_gate: 2 passed, 24 deselected in 0.04s"
+    },
+    {
+      "id": "P1-2",
+      "name": "Wayback fallback uses timestamped snapshot",
+      "behavior": "Archive fallback resolves a real snapshot via the availability API (timestamped), distinguishes not-captured from API error, and skips archive when no snapshot.",
+      "verification": "python -m pytest tests/test_p1_robustness.py -k 'archive_url or skips_archive' -q",
+      "dependencies": [],
+      "state": "passing",
+      "evidence": "2026-06-09 feature_gate: 4 passed, 22 deselected in 0.02s"
+    },
+    {
+      "id": "P1-3",
+      "name": "soft-404 markers narrowed",
+      "behavior": "soft-404 heuristic does not trip on legit academic pages containing 'error'/'404' as words; still flags specific 'page not found' phrases (EN+KO).",
+      "verification": "python -m pytest tests/test_p1_robustness.py -k 'soft_404' -q",
+      "dependencies": [],
+      "state": "passing",
+      "evidence": "2026-06-09 feature_gate: 4 passed, 22 deselected in 0.03s"
+    },
+    {
+      "id": "P1-4",
+      "name": "tiebreak consensus is majority/arbiter (not min)",
+      "behavior": "Tiebreak is not dragged by a single dissent; INACCESSIBLE is excluded from claim consensus; an arbiter breaks a true tie.",
+      "verification": "python -m pytest tests/test_p1_robustness.py -k 'tiebreak' -q",
+      "dependencies": [],
+      "state": "passing",
+      "evidence": "2026-06-09 feature_gate: 3 passed, 23 deselected in 0.02s"
+    },
+    {
+      "id": "P1-5",
+      "name": "keyword judge clamps Match on missing year/number",
+      "behavior": "Keyword judge clamps Match->Partial when a claim's year or number is absent from the source; keeps Match when present or when the claim has no year/number.",
+      "verification": "python -m pytest tests/test_p1_robustness.py -k 'keyword_match' -q",
+      "dependencies": [],
+      "state": "passing",
+      "evidence": "2026-06-09 feature_gate: 4 passed, 22 deselected in 0.02s"
+    },
+    {
+      "id": "P1-6",
+      "name": "robust charset decoding (Korean mojibake)",
+      "behavior": "Decoding handles quoted charset, trailing params, <meta charset> fallback, UTF-8 BOM, and never raises on garbage.",
+      "verification": "python -m pytest tests/test_p1_robustness.py -k 'decode' -q",
+      "dependencies": [],
+      "state": "passing",
+      "evidence": "2026-06-09 feature_gate: 5 passed, 21 deselected in 0.02s"
+    },
+    {
+      "id": "P1-7",
+      "name": "MCP verify_* structured errors + path validation",
+      "behavior": "MCP verify_file/verify_text return {'error': ...} on bad input (missing/oversized file, pipeline error) instead of raising; path is validated.",
+      "verification": "python -m pytest tests/test_mcp_server.py -k 'verify_file or pipeline_error or too_large' -q",
+      "dependencies": [],
+      "state": "passing",
+      "evidence": "2026-06-09 feature_gate: 6 passed, 7 deselected in 0.03s"
+    },
+    {
+      "id": "P1-8",
+      "name": "sources._get caps the response read",
+      "behavior": "sources._get caps the read at MAX_RESPONSE_BYTES (DoS/memory guard); the cap constant is bounded.",
+      "verification": "python -m pytest tests/test_p1_robustness.py -k 'caps_read or max_bytes' -q",
+      "dependencies": [],
+      "state": "passing",
+      "evidence": "2026-06-09 feature_gate: 2 passed, 24 deselected in 0.02s"
+    },
+    {
+      "id": "P1-9",
+      "name": "metadata API hosts are rate-limited",
+      "behavior": "Per-host rate limiting (MIN_HOST_INTERVAL) applies to metadata API hosts too (NCBI/arXiv fair use).",
+      "verification": "python -m pytest tests/test_p1_robustness.py -k 'rate_limits or min_host' -q",
+      "dependencies": [],
+      "state": "passing",
+      "evidence": "2026-06-09 feature_gate: 2 passed, 24 deselected in 0.02s"
+    },
+    {
+      "id": "P1-10",
+      "name": "test coverage for mcp_server + render_markdown",
+      "behavior": "mcp_server and report.py (render_markdown/json) are covered; split-consensus display is verified.",
+      "verification": "python -m pytest tests/test_report.py tests/test_mcp_server.py -q",
+      "dependencies": [],
+      "state": "passing",
+      "evidence": "2026-06-05 harness/p1-coverage: report.py 13->100%, mcp_server 0->86%, 88->112 tests"
+    }
+  ]
+}
