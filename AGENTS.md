@@ -27,6 +27,19 @@ Rules (do not bypass):
 - Full suite: `python -m pytest -q` (must stay green).
 - The feature gate is the per-feature gate; the suite is the global gate.
 
+## Dev setup
+- Recreate the venv if missing: `python -m venv .venv && .venv/bin/pip install -e '.[dev]'`
+- Full suite: `.venv/bin/python -m pytest -q`
+
+## Provider neutrality (hard constraints)
+- Do not rewrite the verifier core for one provider; no permanent provider
+  branches — provider differences live in `paperverify/harness/` and
+  `docs/providers/`.
+- Keep tests network-free (monkeypatch fetch/judges) unless clearly marked
+  as integration.
+- Generated `*_report.md` / `*_claims.jsonl` stay out of commits
+  (`.gitignore` covers them).
+
 ## Conventions
 - SSoT: schema version in `paperverify/report.py` (`SCHEMA_VERSION`); IPC/shape changes bump it.
 - Backlog/audit: `docs/harness/2026-06-04_paper-verify-audit/` (note: a static doc — it drifts;

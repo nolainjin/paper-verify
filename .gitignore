@@ -23,8 +23,5 @@ env/
 .idea/
 .vscode/
 
-# Internal handoff — not for publication
-CLAUDE-HANDOFF.md
-
 # OMC runtime state (never publish — contains local paths)
 .omc/
