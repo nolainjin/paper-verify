@@ -68,7 +68,7 @@ review smaller, faster, and better targeted.
 Run it **without installing anything** (needs [uv](https://docs.astral.sh/uv/)):
 
 ```bash
-uvx --from git+https://github.com/nolainjin/paper-verify paper-verify yourdoc.md --level L2 --out /tmp/pv
+uvx paper-verify yourdoc.md --level L2 --out /tmp/pv
 ```
 
 Runs with **no API keys** (keyword judge, low confidence). Output resembles:
@@ -85,7 +85,7 @@ For a real fact-check, add an LLM judge:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-...
-uvx --from "git+https://github.com/nolainjin/paper-verify" --with anthropic \
+uvx --from "paper-verify[anthropic]" \
   paper-verify paper.md --level L2 --judge anthropic:claude-sonnet-4-6
 ```
 
@@ -103,14 +103,14 @@ uvx --from "git+https://github.com/nolainjin/paper-verify" --with anthropic \
 
 ## Install
 
-> Not on PyPI yet — these install straight from GitHub. (The PyPI release
-> workflow is ready; see `docs/RELEASING.md`.)
-
 ```bash
-pipx install git+https://github.com/nolainjin/paper-verify          # isolated CLI
-pip install "paper-verify @ git+https://github.com/nolainjin/paper-verify"  # core, stdlib only
-pip install "paper-verify[anthropic] @ git+https://github.com/nolainjin/paper-verify"  # + Anthropic judge
+pip install paper-verify                 # core, stdlib only — from PyPI
+pip install "paper-verify[anthropic]"    # + Anthropic judge
 # extras: [anthropic] [openai] [gemini] [mcp] [all] [dev]
+pipx install paper-verify                # isolated CLI
+
+# latest from source:
+pip install "paper-verify @ git+https://github.com/nolainjin/paper-verify"
 
 # for development:
 git clone https://github.com/nolainjin/paper-verify && cd paper-verify
@@ -330,7 +330,7 @@ code (`2`) means a real error (file not found, bad judge spec).
 | `get_profile(key)` | look up one profile by key/alias → dict (`{"error": ...}` if unknown) |
 
 ```bash
-pip install "paper-verify[mcp] @ git+https://github.com/nolainjin/paper-verify"
+pip install "paper-verify[mcp]"
 ```
 
 Register it with an MCP client. For Claude Code:

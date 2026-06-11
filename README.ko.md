@@ -14,15 +14,13 @@ triage 도구**입니다.
 설치 없이 바로 ([uv](https://docs.astral.sh/uv/) 필요):
 
 ```bash
-uvx --from git+https://github.com/nolainjin/paper-verify paper-verify 문서.md --level L2
+uvx paper-verify 문서.md --level L2
 ```
 
 설치해서 쓰기:
 
 ```bash
-pipx install git+https://github.com/nolainjin/paper-verify
-# 또는
-pip install "paper-verify @ git+https://github.com/nolainjin/paper-verify"
+pip install paper-verify        # 또는 pipx install paper-verify
 # 개발용
 git clone https://github.com/nolainjin/paper-verify && cd paper-verify && pip install -e ".[dev]"
 ```
@@ -35,7 +33,7 @@ export ANTHROPIC_API_KEY=sk-...
 paper-verify 문서.md --level L2 --judge anthropic:claude-sonnet-4-6
 ```
 
-> 아직 PyPI 미배포 — 위 명령은 GitHub에서 직접 받습니다. (`docs/RELEASING.md`)
+> PyPI 배포: [pypi.org/project/paper-verify](https://pypi.org/project/paper-verify/) (v0.1.0, 2026-06-11)
 
 ## 💬 터미널 없이 — 웹챗에서
 
