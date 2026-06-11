@@ -21,8 +21,10 @@ Make paper-verify easy to use for **two audiences at once**:
   a separate manual step).
 - Base: `harness/feature-list-pilot` merged to main first (closes the carried P0);
   work happens on a new branch off main.
-- `CLAUDE-HANDOFF.md`: migrate still-true content into `AGENTS.md`, then **delete**
-  (stale 2026-06-04 snapshot contradicting reality in a public repo).
+- `CLAUDE-HANDOFF.md`: migrate still-true content into `AGENTS.md`, then **delete**.
+  (Correction vs. the session discussion: the file is **gitignored / untracked — it was
+  never public**. The deletion rationale is that the stale 2026-06-04 snapshot misleads
+  agent sessions, not public exposure. Its `.gitignore` entry goes away with it.)
 
 ## Deliverables
 
