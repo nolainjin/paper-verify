@@ -19,6 +19,7 @@ from .fetch import fetch_all
 from .harness import get_profile, list_profiles
 from .judge import ensure_judge, make_judge
 from .models import Judgement, Report, Tier, Verdict
+from .offline import report_from_evidence
 from .report import render_json, render_markdown
 from .score import score_citation
 
@@ -120,6 +121,43 @@ def run_pipeline(
     )
 
 
+def _emit(report: Report, args, *, base: str, as_json: bool, human) -> int:
+    """Write files / JSON / human summary for a finished report (shared tail)."""
+    out = args.out
+    if out is None and not as_json:
+        out = "."
+    if out is not None:
+        out_dir = Path(out)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        report_path = out_dir / f"{base}_report.md"
+        claims_path = out_dir / f"{base}_claims.jsonl"
+        report_path.write_text(render_markdown(report), encoding="utf-8")
+        claims_path.write_text(
+            report.to_jsonl() + ("\n" if report.scored else ""), encoding="utf-8"
+        )
+    else:
+        report_path = claims_path = None
+
+    if as_json:
+        print(json.dumps(render_json(report), ensure_ascii=False))
+
+    dist = report.tier_distribution()
+    summary = " ".join(
+        f"{t.symbol}{t.value}:{dist.get(t, 0)}" for t in [Tier.A, Tier.B, Tier.C, Tier.F]
+    )
+    print(
+        f"Overall: {report.overall_score}/100 "
+        f"{report.overall_tier.symbol} {report.overall_tier.value}  [{summary}]",
+        file=human,
+    )
+    if report.has_failure:
+        print("⚠️  Document contains tier-F citations — see report.", file=human)
+    if report_path is not None:
+        print(f"Report:  {report_path}", file=human)
+        print(f"Claims:  {claims_path}", file=human)
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="paper-verify",
@@ -141,6 +179,20 @@ def _build_parser() -> argparse.ArgumentParser:
         "--list-profiles",
         action="store_true",
         help="print all harness profiles as JSON to stdout and exit (no file needed)",
+    )
+    p.add_argument(
+        "--extract-only",
+        action="store_true",
+        help="extract citations and print them as JSON to stdout — no network, "
+        "no LLM (agent surface; pairs with --from-evidence)",
+    )
+    p.add_argument(
+        "--from-evidence",
+        default=None,
+        metavar="FILE",
+        help="skip extract/fetch/judge and score an externally-gathered evidence "
+        "JSON file with the standard rubric (see docs/webchat/). Omit the "
+        "positional file argument in this mode.",
     )
     p.add_argument(
         "--level",
@@ -219,6 +271,30 @@ def main(argv: list[str] | None = None) -> int:
     # In --json mode the human summary goes to stderr so stdout stays pure JSON.
     human = sys.stderr if as_json else sys.stdout
 
+    # --from-evidence: score externally-gathered evidence; no positional file.
+    if args.from_evidence:
+        if args.file:
+            print(
+                "error: pass either a file or --from-evidence, not both",
+                file=sys.stderr,
+            )
+            return 2
+        ev_path = Path(args.from_evidence)
+        if not ev_path.is_file():
+            print(f"error: file not found: {ev_path}", file=sys.stderr)
+            return 2
+        try:
+            data = json.loads(ev_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            print(f"error: invalid JSON in {ev_path}: {exc}", file=sys.stderr)
+            return 2
+        try:
+            report = report_from_evidence(data)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        return _emit(report, args, base=ev_path.stem, as_json=as_json, human=human)
+
     if not args.file:
         print("error: a file argument is required (or use --list-profiles)", file=sys.stderr)
         return 2
@@ -248,6 +324,11 @@ def main(argv: list[str] | None = None) -> int:
     except UnicodeDecodeError:
         text = src.read_text(encoding="utf-8", errors="replace")
 
+    if args.extract_only:
+        cites = extract(text)
+        print(json.dumps({"citations": [c.to_dict() for c in cites]}, ensure_ascii=False))
+        return 0
+
     judge_specs = args.judge or profile_judges or ["keyword"]
     try:
         report = run_pipeline(
@@ -264,42 +345,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    # Write .md/.jsonl files when --out is given, or always in non-JSON mode
-    # (default dir "."). In --json mode files are opt-in via --out.
-    out = args.out
-    if out is None and not as_json:
-        out = "."
-    if out is not None:
-        out_dir = Path(out)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        base = src.stem
-        report_path = out_dir / f"{base}_report.md"
-        claims_path = out_dir / f"{base}_claims.jsonl"
-        report_path.write_text(render_markdown(report), encoding="utf-8")
-        claims_path.write_text(report.to_jsonl() + ("\n" if report.scored else ""), encoding="utf-8")
-    else:
-        report_path = claims_path = None
-
-    # JSON to stdout (the agent-callable surface).
-    if as_json:
-        print(json.dumps(render_json(report), ensure_ascii=False))
-
-    # Human summary (stdout normally, stderr in --json mode).
-    dist = report.tier_distribution()
-    summary = " ".join(
-        f"{t.symbol}{t.value}:{dist.get(t, 0)}" for t in [Tier.A, Tier.B, Tier.C, Tier.F]
-    )
-    print(
-        f"Overall: {report.overall_score}/100 "
-        f"{report.overall_tier.symbol} {report.overall_tier.value}  [{summary}]",
-        file=human,
-    )
-    if report.has_failure:
-        print("⚠️  Document contains tier-F citations — see report.", file=human)
-    if report_path is not None:
-        print(f"Report:  {report_path}", file=human)
-        print(f"Claims:  {claims_path}", file=human)
-    return 0
+    return _emit(report, args, base=src.stem, as_json=as_json, human=human)
 
 
 if __name__ == "__main__":

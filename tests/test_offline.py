@@ -116,3 +116,58 @@ def test_bad_year_type_is_a_clear_error():
     ev["citations"][1]["fetched"]["year"] = "n/a"
     with pytest.raises(EvidenceError, match=r"citations\[1\].fetched"):
         report_from_evidence(ev)
+
+
+def test_cli_from_evidence_json_stdout(tmp_path, capsys):
+    p = tmp_path / "evidence.json"
+    p.write_text(json.dumps(_evidence()), encoding="utf-8")
+    rc = cli.main(["--from-evidence", str(p), "--json"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema_version"] == SCHEMA_VERSION
+    assert payload["judges"] == ["webchat:claude"]
+    assert payload["source_file"] == "demo.md"
+
+
+def test_cli_from_evidence_rejects_extra_file(tmp_path):
+    p = tmp_path / "evidence.json"
+    p.write_text(json.dumps(_evidence()), encoding="utf-8")
+    assert cli.main([str(p), "--from-evidence", str(p)]) == 2
+
+
+def test_cli_from_evidence_bad_json(tmp_path):
+    p = tmp_path / "evidence.json"
+    p.write_text("{nope", encoding="utf-8")
+    assert cli.main(["--from-evidence", str(p), "--json"]) == 2
+
+
+def test_cli_from_evidence_bad_evidence_exits_2(tmp_path):
+    bad = _evidence()
+    bad["citations"][0]["judgements"][0]["verdict"] = "Confirmed"
+    p = tmp_path / "evidence.json"
+    p.write_text(json.dumps(bad), encoding="utf-8")
+    assert cli.main(["--from-evidence", str(p), "--json"]) == 2
+
+
+def test_cli_from_evidence_missing_file(tmp_path):
+    assert cli.main(["--from-evidence", str(tmp_path / "nope.json")]) == 2
+
+
+def test_cli_from_evidence_writes_report_files(tmp_path, capsys):
+    p = tmp_path / "evidence.json"
+    p.write_text(json.dumps(_evidence()), encoding="utf-8")
+    rc = cli.main(["--from-evidence", str(p), "--out", str(tmp_path)])
+    assert rc == 0
+    assert (tmp_path / "evidence_report.md").is_file()
+    assert (tmp_path / "evidence_claims.jsonl").is_file()
+
+
+def test_cli_extract_only(tmp_path, capsys):
+    doc = tmp_path / "doc.md"
+    doc.write_text("see https://example.org/a and DOI 10.1000/xyz", encoding="utf-8")
+    rc = cli.main([str(doc), "--extract-only"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    types = [c["type"] for c in payload["citations"]]
+    assert types == ["URL", "DOI"]
+    assert payload["citations"][0]["id"] == 1
