@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "paper-verify"
-version = "0.1.0"
+version = "0.1.1"
 description = "Citation fact-checking for documents — extract, fetch, judge, and score citations on a 100-point rubric."
 readme = "README.md"
 requires-python = ">=3.10"
