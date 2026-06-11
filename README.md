@@ -1,5 +1,7 @@
 # paper-verify
 
+> **한국어 가이드** → [README.ko.md](README.ko.md)
+
 **Fact-check the citations in any document.** `paper-verify` extracts every
 reference (URL / DOI / PMC / PMID / arXiv) from a Markdown or text file,
 fetches each source, asks one or more LLMs whether the cited *claim* is actually
@@ -61,46 +63,62 @@ paper-verify works best as the first pass before human review:
 It is not a replacement for final expert review. It is designed to make that
 review smaller, faster, and better targeted.
 
-## Install
-
-```bash
-pip install -e .                  # core, stdlib only
-pip install -e ".[anthropic]"     # + Anthropic judge
-pip install -e ".[openai]"        # + OpenAI judge
-pip install -e ".[gemini]"        # + Gemini judge
-pip install -e ".[all]"           # all providers
-pip install -e ".[mcp]"           # + MCP server (agent tool)
-pip install -e ".[dev]"           # + pytest
-```
-
-Requires Python ≥ 3.10.
-
 ## Quickstart
 
-Runs with **no API keys** (keyword judge, low confidence):
+Run it **without installing anything** (needs [uv](https://docs.astral.sh/uv/)):
 
 ```bash
-paper-verify examples/sample.md --level L2 --out /tmp/pv
-# or, without installing:
-python -m paperverify examples/sample.md --level L2 --out /tmp/pv
+uvx --from git+https://github.com/nolainjin/paper-verify paper-verify yourdoc.md --level L2 --out /tmp/pv
 ```
 
-Output resembles:
+Runs with **no API keys** (keyword judge, low confidence). Output resembles:
 
 ```
 paper-verify: 5 citations, level L2, judges: keyword
 Overall: <score>/100 <tier>  [🟢A:<n> 🟡B:<n> 🟠C:<n> 🔴F:<n>]
 ⚠️  Document contains tier-F citations — see report.
-Report:  /tmp/pv/sample_report.md
-Claims:  /tmp/pv/sample_claims.jsonl
+Report:  /tmp/pv/yourdoc_report.md
+Claims:  /tmp/pv/yourdoc_claims.jsonl
 ```
 
 For a real fact-check, add an LLM judge:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-...
-paper-verify paper.md --level L2 --judge anthropic:claude-sonnet-4-6
+uvx --from "git+https://github.com/nolainjin/paper-verify" --with anthropic \
+  paper-verify paper.md --level L2 --judge anthropic:claude-sonnet-4-6
 ```
+
+## 💬 No terminal? Use it from a web chat
+
+- **Any web chat** (Claude / ChatGPT / Gemini with browsing): copy-paste
+  [`docs/webchat/webchat-prompt.md`](docs/webchat/webchat-prompt.md)
+  (한국어: [`webchat-prompt.ko.md`](docs/webchat/webchat-prompt.ko.md)) — the
+  model fetches your sources and scores them with this same 100-point rubric.
+- **claude.ai (skill upload)**: upload the web-chat skill zip — extraction and
+  scoring run as bundled code, fetching/judging use Claude's web tools, and the
+  score comes from the real rubric via `--from-evidence`. Get the zip from
+  [Releases](https://github.com/nolainjin/paper-verify/releases) or build it:
+  `python tools/build_webchat_skill.py`.
+
+## Install
+
+> Not on PyPI yet — these install straight from GitHub. (The PyPI release
+> workflow is ready; see `docs/RELEASING.md`.)
+
+```bash
+pipx install git+https://github.com/nolainjin/paper-verify          # isolated CLI
+pip install "paper-verify @ git+https://github.com/nolainjin/paper-verify"  # core, stdlib only
+pip install "paper-verify[anthropic] @ git+https://github.com/nolainjin/paper-verify"  # + Anthropic judge
+# extras: [anthropic] [openai] [gemini] [mcp] [all] [dev]
+
+# for development:
+git clone https://github.com/nolainjin/paper-verify && cd paper-verify
+pip install -e ".[dev]"
+```
+
+Requires Python ≥ 3.10. From a clone you can also run without installing:
+`python -m paperverify yourdoc.md --level L2`.
 
 ## Verification levels
 
@@ -164,9 +182,9 @@ Pass `--judge SPEC` (repeatable for cross-check). Spec forms:
 | Spec | Judge | Requirement |
 |---|---|---|
 | `keyword` | token-overlap heuristic (**default**) | none — always available |
-| `anthropic` / `anthropic:claude-sonnet-4-6` | Anthropic SDK | `pip install paper-verify[anthropic]`, `ANTHROPIC_API_KEY` |
-| `openai` / `openai:gpt-4o-mini` | OpenAI SDK | `pip install paper-verify[openai]`, `OPENAI_API_KEY` |
-| `gemini` / `gemini:gemini-2.0-flash` | google-genai SDK | `pip install paper-verify[gemini]`, `GEMINI_API_KEY` |
+| `anthropic` / `anthropic:claude-sonnet-4-6` | Anthropic SDK | extras `[anthropic]` (see Install), `ANTHROPIC_API_KEY` |
+| `openai` / `openai:gpt-4o-mini` | OpenAI SDK | extras `[openai]` (see Install), `OPENAI_API_KEY` |
+| `gemini` / `gemini:gemini-2.0-flash` | google-genai SDK | extras `[gemini]` (see Install), `GEMINI_API_KEY` |
 | `cli:gemini` / `cli:claude` / `cli:codex` | shells out to a locally-installed CLI | that CLI on `$PATH` |
 
 The `keyword` judge is **clearly low-confidence** — it only measures lexical
@@ -311,7 +329,7 @@ code (`2`) means a real error (file not found, bad judge spec).
 | `get_profile(key)` | look up one profile by key/alias → dict (`{"error": ...}` if unknown) |
 
 ```bash
-pip install paper-verify[mcp]
+pip install "paper-verify[mcp] @ git+https://github.com/nolainjin/paper-verify"
 ```
 
 Register it with an MCP client. For Claude Code:
@@ -334,7 +352,28 @@ Or in an MCP client config (`mcpServers`):
 
 The `mcp` package is an **optional extra** — the core tool and `--json` work
 with `mcp` not installed; importing the server without it raises a clear
-`pip install paper-verify[mcp]` hint instead of crashing.
+install hint for the `[mcp]` extra instead of crashing.
+
+### (c) `--from-evidence` — bring your own fetch/judge
+
+If your agent (or a web chat) already fetched the sources and judged the
+claims, hand paper-verify the evidence and let it apply the standard rubric —
+identical scoring to a native run:
+
+```bash
+paper-verify yourdoc.md --extract-only > citations.json   # deterministic extraction
+# …your agent fetches each citation and judges it, producing evidence.json…
+paper-verify --from-evidence evidence.json --json --out out/
+```
+
+The evidence shape is documented by example in
+[`examples/evidence-sample.json`](examples/evidence-sample.json): per citation,
+the `citation` object from `--extract-only` verbatim, a `fetched` object
+(`status`, `title`, `abstract`, `authors`, `year`, `source`,
+`soft_404_suspect`, …), and one or more `judgements`
+(`{"judge", "verdict", "reason"}` — verdicts: Match | Partial | Mismatch |
+Uncertain | Inaccessible). Malformed evidence exits 2 with the offending
+citation index named. This is the engine behind the web-chat skill.
 
 ## Scoring rubric (100 points)
 
@@ -390,16 +429,9 @@ Tiers (per citation, and document average):
 
 ## 한국어 요약
 
-`paper-verify`는 문서(마크다운/텍스트) 안의 인용 출처(URL·DOI·PMC·PMID·arXiv)를
-자동으로 추출하고, 각 출처를 가져와 **인용된 주장이 원문에 실제로 존재하는지**를
-LLM 심판으로 판정한 뒤 **100점 채점표**로 점수를 매겨 보고서를 만듭니다. AI가
-지어낸(hallucinated) 인용·오인용·죽은 링크를 발행 전에 잡아내기 위한 도구입니다.
-
-- **외부 프레임워크 의존성 0** — 코어는 파이썬 표준 라이브러리만 사용하며, LLM
-  제공자는 선택적 extra입니다. API 키 없이도 `keyword` 심판으로 전 과정이 동작합니다
-  (단, 저신뢰도).
-- 사용: `paper-verify <파일> --level L2 --judge anthropic:claude-sonnet-4-6`
-- 레벨: `L1`(링크 생존만) / `L2`(기본, 초록·제목 일치) / `L3`(본문·수치 정합).
+문서 안의 인용 출처(URL·DOI·PMC·PMID·arXiv)를 추출해 실제 원문과 대조하고 100점
+루브릭으로 채점하는 도구입니다. **전체 한국어 가이드: [README.ko.md](README.ko.md)**
+(터미널 없이 웹챗에서 쓰는 방법 포함).
 
 ## License
 
