@@ -162,6 +162,13 @@ def test_cli_from_evidence_writes_report_files(tmp_path, capsys):
     assert (tmp_path / "evidence_claims.jsonl").is_file()
 
 
+def test_shipped_sample_evidence_round_trips():
+    sample = ROOT / "examples" / "evidence-sample.json"
+    report = report_from_evidence(json.loads(sample.read_text(encoding="utf-8")))
+    assert len(report.scored) == 2
+    assert report.has_failure  # the Mismatch citation lands in tier F by design
+
+
 def test_cli_extract_only(tmp_path, capsys):
     doc = tmp_path / "doc.md"
     doc.write_text("see https://example.org/a and DOI 10.1000/xyz", encoding="utf-8")

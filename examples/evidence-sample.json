@@ -1,0 +1,50 @@
+{
+  "source_file": "demo.md",
+  "level": "L2",
+  "citations": [
+    {
+      "citation": {
+        "type": "URL",
+        "ref": "https://example.org/a",
+        "context": "Smith (2020) shows X",
+        "line": 3
+      },
+      "fetched": {
+        "status": 200,
+        "title": "X study",
+        "abstract": "Smith 2020 shows X.",
+        "url_final": "https://example.org/a",
+        "source": "http"
+      },
+      "judgements": [
+        {
+          "judge": "webchat:claude",
+          "verdict": "Match",
+          "reason": "explicitly supported"
+        }
+      ]
+    },
+    {
+      "citation": {
+        "type": "DOI",
+        "ref": "10.1000/xyz",
+        "context": "claims Y rose 40%",
+        "line": 9
+      },
+      "fetched": {
+        "status": 200,
+        "title": "Y paper",
+        "abstract": "Y fell.",
+        "source": "crossref",
+        "year": 2021
+      },
+      "judgements": [
+        {
+          "judge": "webchat:claude",
+          "verdict": "Mismatch",
+          "reason": "contradicted"
+        }
+      ]
+    }
+  ]
+}
