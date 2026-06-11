@@ -249,7 +249,8 @@ paper-verify paper.md \
 the original 3-stage consensus spirit:
 
 - on a genuine consensus (incl. **after** the tie-break) the citation keeps its
-  10 cross-check points, using the **most-conservative** verdict as consensus;
+  10 cross-check points, using the **majority** verdict as consensus (the
+  tie-break judge arbitrates a genuine tie between distinct verdicts);
 - if judges remain split with **no** `--tiebreak`, the effective verdict becomes
   **Uncertain** (claim-match = 15) and cross-check = 0, flagging it for review.
 
