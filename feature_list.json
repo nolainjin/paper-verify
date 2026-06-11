@@ -92,6 +92,38 @@
       "dependencies": [],
       "state": "passing",
       "evidence": "2026-06-05 harness/p1-coverage: report.py 13->100%, mcp_server 0->86%, 88->112 tests"
+    },
+    {
+      "id": "W1",
+      "name": "offline evidence scoring (--from-evidence)",
+      "behavior": "External fetch/judge evidence JSON is scored with the standard rubric via report_from_evidence + CLI --from-evidence/--extract-only; malformed evidence exits 2 naming the citation index.",
+      "verification": "python -m pytest tests/test_offline.py -q",
+      "dependencies": [],
+      "state": "passing",
+      "evidence": "2026-06-11 feature_gate: 16 passed in 0.03s"
+    },
+    {
+      "id": "W2",
+      "name": "webchat assets rubric drift guard",
+      "behavior": "Portable prompts (EN/KO) and the webchat SKILL.md carry rubric numbers identical to score.py constants and reference the offline entrypoints.",
+      "verification": "python -m pytest tests/test_webchat_assets.py -q",
+      "dependencies": [
+        "W1"
+      ],
+      "state": "passing",
+      "evidence": "2026-06-11 feature_gate: 7 passed in 0.01s"
+    },
+    {
+      "id": "W3",
+      "name": "webchat skill zip builder",
+      "behavior": "tools/build_webchat_skill.py deterministically bundles SKILL.md + the paperverify package + sample evidence + fallback prompt; --check verifies required members.",
+      "verification": "python tools/build_webchat_skill.py --check",
+      "dependencies": [
+        "W1",
+        "W2"
+      ],
+      "state": "passing",
+      "evidence": "2026-06-11 feature_gate: OK: /var/folders/n9/l1xsjy5d071f7dffg4f074yh0000gn/T/tmp27vthgr0/paper-verify-webchat-skill.zip (17 files)"
     }
   ]
 }
